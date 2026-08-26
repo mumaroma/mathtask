@@ -72,6 +72,16 @@
   .t { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
   .m { font-size: 11.5px; color: var(--ink2); font-family: var(--mono); margin-top: 2px; }
   .num { font-family: var(--mono); font-size: 11px; color: var(--gold); font-weight: 700; }
+  .fold { display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 13px; font-weight: 700; color: var(--blue); padding: 15px 0 7px;
+    border-bottom: 1px solid var(--line); }
+  .fold:first-of-type { padding-top: 2px; }
+  .fold b { font-weight: 400; font-size: 11.5px; color: var(--ink2); font-family: var(--mono); }
+  .dayhead { display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--gold);
+    letter-spacing: .3px; padding: 16px 0 7px; border-bottom: 1px solid var(--line); }
+  .dayhead:first-of-type { padding-top: 4px; }
+  .dayhead b { font-weight: 400; color: var(--ink2); }
   .empty { text-align: center; padding: 28px 12px; color: var(--ink2); font-size: 13px; line-height: 1.7; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
@@ -87,8 +97,13 @@
     text-align: center; font-size: 13px; color: var(--ink2); line-height: 1.7; margin-bottom: 12px; }
   .drop.hot { border-color: var(--blue); background: #F7FAFC; }
 
-  iframe.frame { width: 100%; height: 70vh; min-height: 420px; border: 1px solid var(--line);
+  iframe.frame { width: 100%; height: 84vh; min-height: 540px; border: 1px solid var(--line);
     border-radius: 10px; background: #fff; }
+  .modal iframe.frame { height: 80vh; }
+  .thumb .open { cursor: pointer; }
+  .thumb .foot { padding: 0 8px 8px; }
+  .toggle { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+  .toggle span { font-size: 12px; font-weight: 400; }
   .modal { position: fixed; inset: 0; background: rgba(26,26,26,.78); display: flex;
     align-items: center; justify-content: center; padding: 20px; z-index: 50; }
   .mbox { max-width: 760px; width: 100%; text-align: center; }
@@ -133,6 +148,38 @@ function esc(s) {
 function fmt(iso) {
   var d = new Date(iso), p = function (n) { return String(n).padStart(2, "0"); };
   return p(d.getMonth() + 1) + "/" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+function hm(iso) {
+  var d = new Date(iso), p = function (n) { return String(n).padStart(2, "0"); };
+  return p(d.getHours()) + ":" + p(d.getMinutes());
+}
+var WD = ["일", "월", "화", "수", "목", "금", "토"];
+function dayLabel(iso) {
+  var d = new Date(iso), t = new Date();
+  var same = d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
+  return (d.getMonth() + 1) + "월 " + d.getDate() + "일 (" + WD[d.getDay()] + ")" + (same ? " · 오늘" : "");
+}
+function groupByFolder(rows) {
+  var named = [], plain = [], map = {};
+  rows.forEach(function (r) {
+    var f = (r.folder || "").trim();
+    if (!f) { plain.push(r); return; }
+    if (!map[f]) { map[f] = { label: f, rows: [] }; named.push(map[f]); }
+    map[f].rows.push(r);
+  });
+  named.sort(function (a, b) { return a.label.localeCompare(b.label, "ko"); });
+  if (plain.length) named.push({ label: "폴더 없음", rows: plain });
+  return named;
+}
+function groupByDay(rows) {
+  var out = [], map = {};
+  rows.forEach(function (r) {
+    var d = new Date(r.created_at);
+    var k = d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate();
+    if (!map[k]) { map[k] = { label: dayLabel(r.created_at), rows: [] }; out.push(map[k]); }
+    map[k].rows.push(r);
+  });
+  return out;
 }
 function render(html) { app.innerHTML = html; window.scrollTo(0, 0); }
 function $(sel) { return app.querySelector(sel); }
@@ -195,6 +242,7 @@ function mountFrame(holderSel, html, title) {
   f.className = "frame";
   f.title = title || "과제";
   f.setAttribute("sandbox", "allow-scripts allow-forms allow-modals allow-popups");
+  f.setAttribute("allowfullscreen", "");
   f.srcdoc = html;
   holder.appendChild(f);
 }
@@ -210,7 +258,7 @@ function wirePicker(onPick) {
     e.preventDefault(); drop.classList.remove("hot"); take(e.dataTransfer.files[0]);
   });
   document.addEventListener("paste", function (e) {
-    if (!document.body.contains(drop)) return;
+    if (!document.body.contains(drop) || !drop.offsetParent) return;
     var items = e.clipboardData ? e.clipboardData.items : [];
     for (var i = 0; i < items.length; i++) {
       if (items[i].type.indexOf("image/") === 0) { take(items[i].getAsFile()); break; }
@@ -370,7 +418,8 @@ function viewDash() {
       '<p class="hint">코드를 알려 주거나 링크를 보내세요. 링크로 들어온 학생은 코드를 입력하지 않아도 됩니다.</p>' +
       '<div class="row"><span class="code-chip">' + esc(sp.code) + '</span>' +
       '<button class="btn-s" id="cpCode">코드 복사</button>' +
-      '<button class="btn-s" id="cpLink">링크 복사</button></div>' +
+      '<button class="btn-s" id="cpLink">링크 복사</button>' +
+      '<button class="btn-s" id="openLink">링크 열기</button></div>' +
       '<div class="linkbox">' + esc(shareLink(sp.code)) + '</div></div>' +
     '<div class="tabs">' +
       '<button class="tab' + (ST.tab === "apps" ? " on" : "") + '" data-tab="apps">과제 앱</button>' +
@@ -381,6 +430,7 @@ function viewDash() {
   on("#back", "click", viewSpaces);
   on("#cpCode", "click", function (e) { copy(sp.code, e.target); });
   on("#cpLink", "click", function (e) { copy(shareLink(sp.code), e.target); });
+  on("#openLink", "click", function () { window.open(shareLink(sp.code), "_blank"); });
   app.querySelectorAll(".tab").forEach(function (b) {
     b.addEventListener("click", function () { ST.tab = b.dataset.tab; viewDash(); });
   });
@@ -391,24 +441,41 @@ function viewDash() {
 }
 
 function panelApps() {
-  sb.from("apps").select("id,title,created_at").eq("space_code", ST.space.code)
+  sb.from("apps").select("id,title,created_at,folder").eq("space_code", ST.space.code)
     .order("created_at").then(function (r) {
       ST.apps = r.data || [];
+      var n = 0;
       var rows = ST.apps.length
-        ? ST.apps.map(function (a, i) {
-            return '<div class="item"><span class="num">' + String(i + 1).padStart(2, "0") + '</span>' +
-              '<div class="grow"><div class="t">' + esc(a.title) + '</div>' +
-              '<div class="m">' + fmt(a.created_at) + ' 등록</div></div>' +
-              '<button class="btn-s prev" data-id="' + a.id + '">미리보기</button>' +
-              '<button class="btn-d del" data-id="' + a.id + '">삭제</button></div>';
+        ? groupByFolder(ST.apps).map(function (g) {
+            return '<div class="fold">' + esc(g.label) + '<b>' + g.rows.length + '개</b></div>' +
+              g.rows.map(function (a) {
+                n++;
+                return '<div class="item"><span class="num">' + String(n).padStart(2, "0") + '</span>' +
+                  '<div class="grow"><div class="t">' + esc(a.title) + '</div>' +
+                  '<div class="m">' + fmt(a.created_at) + ' 등록</div></div>' +
+                  '<button class="btn-s move" data-id="' + a.id + '" data-f="' + esc(a.folder || "") + '">폴더</button>' +
+                  '<button class="btn-s prev" data-id="' + a.id + '">미리보기</button>' +
+                  '<button class="btn-d del" data-id="' + a.id + '">삭제</button></div>';
+              }).join("");
           }).join("")
         : '<div class="empty">아직 과제가 없습니다.<br>아래에서 첫 과제를 올려 보세요.</div>';
+
+      var folders = [];
+      ST.apps.forEach(function (a) {
+        var f = (a.folder || "").trim();
+        if (f && folders.indexOf(f) < 0) folders.push(f);
+      });
 
       $("#panel").innerHTML =
         '<div class="card"><h2>등록된 과제 <span class="num">' + ST.apps.length + '</span></h2>' + rows + '</div>' +
         '<div class="card"><h2>과제 추가</h2>' +
           '<p class="hint">HTML 파일 하나로 된 활동을 그대로 올립니다. 코드를 붙여넣거나 .html 파일을 고르세요.</p>' +
           '<label>과제 제목</label><input type="text" id="atitle" placeholder="예: 활동 1 — 일차함수의 그래프">' +
+          '<label>폴더 (선택 — 비워 두면 폴더 없음)</label>' +
+          '<input type="text" id="afolder" list="flist" placeholder="예: 1학기 · 함수 단원">' +
+          '<datalist id="flist">' + folders.map(function (f) {
+            return '<option value="' + esc(f) + '">';
+          }).join("") + '</datalist>' +
           '<label>HTML 코드</label><textarea id="ahtml" placeholder="&lt;!DOCTYPE html&gt; …"></textarea>' +
           '<div class="row"><button class="btn-s" id="pickfile">.html 파일 고르기</button>' +
           '<button class="btn-p" id="addapp">과제 추가</button></div>' +
@@ -428,16 +495,31 @@ function panelApps() {
       });
       on("#addapp", "click", function () {
         var title = $("#atitle").value.trim(), html = $("#ahtml").value;
+        var folder = $("#afolder").value.trim();
         if (!title) return setErr("과제 제목을 입력하세요.");
         if (!html.trim()) return setErr("HTML 코드를 붙여넣거나 파일을 고르세요.");
         var btn = $("#addapp"); btn.disabled = true; setErr("");
-        sb.from("apps").insert({ space_code: ST.space.code, title: title, html: html })
+        sb.from("apps").insert({ space_code: ST.space.code, title: title, html: html, folder: folder || null })
           .then(function (r) {
             btn.disabled = false;
             if (r.error) return setErr("저장하지 못했습니다: " + r.error.message);
             panelApps();
           });
       });
+      app.querySelectorAll(".move").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var cur = b.dataset.f || "";
+          var next = window.prompt("옮길 폴더 이름을 적으세요.\n비워 두면 폴더 없음으로 갑니다." +
+            (folders.length ? "\n\n지금 있는 폴더: " + folders.join(", ") : ""), cur);
+          if (next === null) return;
+          next = next.trim();
+          sb.from("apps").update({ folder: next || null }).eq("id", b.dataset.id).then(function (r) {
+            if (r.error) return alert("옮기지 못했습니다: " + r.error.message);
+            panelApps();
+          });
+        });
+      });
+
       app.querySelectorAll(".prev").forEach(function (b) {
         b.addEventListener("click", function () { previewApp(b.dataset.id); });
       });
@@ -463,18 +545,33 @@ function previewApp(id) {
 }
 
 function panelLog() {
-  sb.from("visits").select("student_name,created_at").eq("space_code", ST.space.code)
+  sb.from("visits").select("id,student_name,created_at").eq("space_code", ST.space.code)
     .order("created_at", { ascending: false }).limit(300).then(function (r) {
       var rows = (r.data || []);
       $("#panel").innerHTML =
         '<div class="card"><h2>접속 기록 <span class="num">' + rows.length + '</span></h2>' +
-        '<p class="hint">학생이 이름을 넣고 들어온 시각입니다. 최근 300건까지 보입니다.</p>' +
+        '<p class="hint">학생이 이름을 넣고 들어온 시각입니다. 삭제는 두 번 눌러야 지워집니다.</p>' +
         (rows.length
-          ? rows.map(function (v) {
-              return '<div class="item"><div class="grow"><div class="t">' + esc(v.student_name) + '</div></div>' +
-                '<div class="m">' + fmt(v.created_at) + '</div></div>';
+          ? groupByDay(rows).map(function (g) {
+              return '<div class="dayhead">' + esc(g.label) + '<b>' + g.rows.length + '명</b></div>' +
+                g.rows.map(function (v) {
+                  return '<div class="item"><div class="grow"><div class="t">' + esc(v.student_name) + '</div></div>' +
+                    '<div class="m">' + hm(v.created_at) + '</div>' +
+                    '<button class="btn-d vdel" data-id="' + v.id + '">삭제</button></div>';
+                }).join("");
             }).join("")
           : '<div class="empty">아직 들어온 학생이 없습니다.</div>') + '</div>';
+
+      app.querySelectorAll(".vdel").forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (b.textContent === "삭제") { b.textContent = "정말 삭제"; return; }
+          b.disabled = true;
+          sb.from("visits").delete().eq("id", b.dataset.id).then(function (r) {
+            if (r.error) { b.disabled = false; b.textContent = "삭제"; alert("지우지 못했습니다: " + r.error.message); return; }
+            panelLog();
+          });
+        });
+      });
     });
 }
 
@@ -485,19 +582,37 @@ function panelSubs() {
       var url = function (p) { return sb.storage.from("submissions").getPublicUrl(p).data.publicUrl; };
       $("#panel").innerHTML =
         '<div class="card"><h2>제출 결과 <span class="num">' + rows.length + '</span></h2>' +
-        '<p class="hint">학생이 보낸 캡처입니다. 눌러서 크게 볼 수 있습니다.</p>' +
+        '<p class="hint">학생이 보낸 캡처입니다. 눌러서 크게 볼 수 있고, 삭제는 두 번 눌러야 지워집니다.</p>' +
         (rows.length
-          ? '<div class="grid">' + rows.map(function (s) {
-              return '<button class="thumb" data-p="' + esc(s.image_path) + '" data-n="' +
-                esc(s.student_name + " · " + (s.app_title || "") + " · " + fmt(s.created_at) +
-                (s.note ? " · " + s.note : "")) + '">' +
-                '<img loading="lazy" src="' + esc(url(s.image_path)) + '" alt="제출 캡처">' +
-                '<div class="cap"><b>' + esc(s.student_name) + '</b>' +
-                '<i>' + esc(s.app_title || "") + '</i><i>' + fmt(s.created_at) + '</i></div></button>';
-            }).join("") + '</div>'
+          ? groupByDay(rows).map(function (g) {
+              return '<div class="dayhead">' + esc(g.label) + '<b>' + g.rows.length + '건</b></div>' +
+                '<div class="grid" style="margin-top:10px">' + g.rows.map(function (s) {
+                  return '<div class="thumb"><div class="open" data-p="' + esc(s.image_path) + '" data-n="' +
+                    esc(s.student_name + " · " + (s.app_title || "") + " · " + fmt(s.created_at) +
+                    (s.note ? " · " + s.note : "")) + '">' +
+                    '<img loading="lazy" src="' + esc(url(s.image_path)) + '" alt="제출 캡처">' +
+                    '<div class="cap"><b>' + esc(s.student_name) + '</b>' +
+                    '<i>' + esc(s.app_title || "") + '</i><i>' + hm(s.created_at) + '</i></div></div>' +
+                    '<div class="foot"><button class="btn-d sdel" data-id="' + s.id +
+                    '" data-path="' + esc(s.image_path) + '">삭제</button></div></div>';
+                }).join("") + '</div>';
+            }).join("")
           : '<div class="empty">아직 제출된 결과가 없습니다.</div>') + '</div><div id="modal"></div>';
 
-      app.querySelectorAll(".thumb").forEach(function (b) {
+      app.querySelectorAll(".sdel").forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (b.textContent === "삭제") { b.textContent = "정말 삭제"; return; }
+          b.disabled = true;
+          sb.storage.from("submissions").remove([b.dataset.path]).then(function () {
+            return sb.from("submissions").delete().eq("id", b.dataset.id);
+          }).then(function (r) {
+            if (r && r.error) { b.disabled = false; b.textContent = "삭제"; alert("지우지 못했습니다: " + r.error.message); return; }
+            panelSubs();
+          });
+        });
+      });
+
+      app.querySelectorAll(".thumb .open").forEach(function (b) {
         b.addEventListener("click", function () {
           $("#modal").innerHTML =
             '<div class="modal"><div class="mbox"><p>' + esc(b.dataset.n) + '</p>' +
@@ -543,18 +658,26 @@ function studentEnter(code) {
 
 function studentApps() {
   render('<div class="card"><div class="empty">과제를 불러오는 중…</div></div>');
-  sb.from("apps").select("id,title").eq("space_code", ST.space.code).order("created_at").then(function (r) {
+  sb.from("apps").select("id,title,folder").eq("space_code", ST.space.code).order("created_at").then(function (r) {
     ST.apps = r.data || [];
     render(
       '<div class="between"><span class="m">' + esc(ST.space.title) + '</span>' +
         '<span class="m">' + esc(ST.student) + '</span></div>' +
       '<div class="card"><h2>과제 목록</h2><p class="hint">과제를 골라 여세요.</p>' +
       (ST.apps.length
-        ? ST.apps.map(function (a, i) {
-            return '<div class="item"><span class="num">' + String(i + 1).padStart(2, "0") + '</span>' +
-              '<div class="grow"><div class="t">' + esc(a.title) + '</div></div>' +
-              '<button class="btn-p open" data-id="' + a.id + '">열기</button></div>';
-          }).join("")
+        ? (function () {
+            var n = 0, gs = groupByFolder(ST.apps);
+            var one = gs.length === 1 && gs[0].label === "폴더 없음";
+            return gs.map(function (g) {
+              return (one ? "" : '<div class="fold">' + esc(g.label) + '<b>' + g.rows.length + '개</b></div>') +
+                g.rows.map(function (a) {
+                  n++;
+                  return '<div class="item"><span class="num">' + String(n).padStart(2, "0") + '</span>' +
+                    '<div class="grow"><div class="t">' + esc(a.title) + '</div></div>' +
+                    '<button class="btn-p open" data-id="' + a.id + '">열기</button></div>';
+                }).join("");
+            }).join("");
+          })()
         : '<div class="empty">아직 올라온 과제가 없습니다.</div>') + '</div>');
     app.querySelectorAll(".open").forEach(function (b) {
       b.addEventListener("click", function () { studentOpen(b.dataset.id); });
@@ -568,18 +691,34 @@ function studentOpen(id) {
     var a = r.data;
     render(
       '<div class="between"><button class="btn-s" id="back">← 과제 목록</button>' +
-        '<span class="t">' + esc(a.title) + '</span></div>' +
+        '<span class="t">' + esc(a.title) + '</span>' +
+        '<button class="btn-s" id="full">전체 화면</button></div>' +
       '<div id="holder"></div>' +
-      '<div class="card" style="margin-top:14px"><h2>선생님께 결과 보내기</h2>' +
-        '<p class="hint">완성한 화면을 캡처해서 올리세요. 휴대폰은 화면 캡처, 컴퓨터는 캡처 후 붙여넣기가 편합니다.</p>' +
-        '<div class="drop" id="drop">캡처 이미지를 여기에 붙여넣기(Ctrl+V)하거나 끌어다 놓으세요' +
-          '<div style="margin-top:12px"><button class="btn-s" id="pick">사진 고르기</button></div></div>' +
-        '<input type="file" id="file" accept="image/*" style="display:none">' +
-        '<label>한마디 (선택)</label>' +
-        '<input type="text" id="note" placeholder="예: 두 번째 문제가 헷갈렸어요">' +
-        '<div class="err" id="err"></div><div class="ok" id="ok"></div></div>');
+      '<div class="card" style="margin-top:14px">' +
+        '<button class="btn-g toggle" id="toggle">선생님께 결과 보내기<span id="arrow">▼ 열기</span></button>' +
+        '<div id="send" style="display:none;margin-top:16px">' +
+          '<p class="hint">완성한 화면을 캡처해서 올리세요. 휴대폰은 화면 캡처, 컴퓨터는 캡처 후 붙여넣기가 편합니다.</p>' +
+          '<div class="drop" id="drop">캡처 이미지를 여기에 붙여넣기(Ctrl+V)하거나 끌어다 놓으세요' +
+            '<div style="margin-top:12px"><button class="btn-s" id="pick">사진 고르기</button></div></div>' +
+          '<input type="file" id="file" accept="image/*" style="display:none">' +
+          '<label>한마디 (선택)</label>' +
+          '<input type="text" id="note" placeholder="예: 두 번째 문제가 헷갈렸어요">' +
+          '<div class="err" id="err"></div><div class="ok" id="ok"></div></div></div>');
     mountFrame("#holder", a.html, a.title);
     on("#back", "click", studentApps);
+    on("#full", "click", function () {
+      var fr = app.querySelector("#holder iframe");
+      if (!fr) return;
+      if (fr.requestFullscreen) fr.requestFullscreen();
+      else if (fr.webkitRequestFullscreen) fr.webkitRequestFullscreen();
+      else fr.scrollIntoView({ block: "start" });
+    });
+    on("#toggle", "click", function () {
+      var box = $("#send"), open = box.style.display === "none";
+      box.style.display = open ? "block" : "none";
+      $("#arrow").textContent = open ? "▲ 접기" : "▼ 열기";
+      if (open) box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
     wirePicker(function (file) { sendResult(file, a); });
   });
 }
