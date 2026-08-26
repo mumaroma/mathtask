@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>수학 과제 앱 공간</title>
+<title>수업용 HTML 과제 앱 공간</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -79,6 +79,9 @@
     font-size: 13px; font-weight: 700; color: var(--blue); padding: 15px 0 7px;
     border-bottom: 1px solid var(--line); }
   .fold:first-of-type { padding-top: 2px; }
+  .ord { display: inline-flex; gap: 2px; flex: none; }
+  .ord .btn-d, .fold .btn-d { padding: 3px 7px; font-size: 11px; line-height: 1.2; }
+  .fold .dl { gap: 4px; }
   .fold b { font-weight: 400; font-size: 11.5px; color: var(--ink2); font-family: var(--mono); }
   .dayhead { display: flex; justify-content: space-between; align-items: baseline;
     font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--gold);
@@ -130,7 +133,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="brand"><h1>수학 과제 앱 공간</h1><span>MATH TASK HUB</span></div>
+  <div class="brand"><h1>수업용 HTML 과제 앱 공간</h1><span>CLASS TASK HUB</span></div>
   <div id="app"><div class="card"><div class="empty">불러오는 중…</div></div></div>
 </div>
 
@@ -168,6 +171,38 @@ function dayLabel(iso) {
   var same = d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
   return (d.getMonth() + 1) + "월 " + d.getDate() + "일 (" + WD[d.getDay()] + ")" + (same ? " · 오늘" : "");
 }
+function sortApps(rows) {
+  return rows.slice().sort(function (a, b) {
+    var pa = (a.position == null ? 1e9 : a.position), pb = (b.position == null ? 1e9 : b.position);
+    if (pa !== pb) return pa - pb;
+    return new Date(a.created_at) - new Date(b.created_at);
+  });
+}
+
+/* 폴더 묶음(표시 순서 그대로)을 다시 펴서 0,1,2… 로 번호를 매기고 바뀐 것만 저장 */
+function saveOrder(groups, done) {
+  var flat = [], jobs = [];
+  groups.forEach(function (g) { g.rows.forEach(function (a) { flat.push(a); }); });
+  flat.forEach(function (a, i) {
+    if (a.position !== i) {
+      a.position = i;
+      jobs.push(sb.from("apps").update({ position: i }).eq("id", a.id));
+    }
+  });
+  if (!jobs.length) return done();
+  Promise.all(jobs).then(function (rs) {
+    var bad = rs.filter(function (r) { return r && r.error; })[0];
+    if (bad) alert("순서를 저장하지 못했습니다: " + bad.error.message);
+    done();
+  });
+}
+
+function swap(arr, i, j) {
+  if (j < 0 || j >= arr.length) return false;
+  var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+  return true;
+}
+
 function groupByFolder(rows) {
   var named = [], plain = [], map = {};
   rows.forEach(function (r) {
@@ -176,8 +211,7 @@ function groupByFolder(rows) {
     if (!map[f]) { map[f] = { label: f, rows: [] }; named.push(map[f]); }
     map[f].rows.push(r);
   });
-  named.sort(function (a, b) { return a.label.localeCompare(b.label, "ko"); });
-  if (plain.length) named.push({ label: "폴더 없음", rows: plain });
+  if (plain.length) named.push({ label: "폴더 없음", plain: true, rows: plain });
   return named;
 }
 function groupByDay(rows) {
@@ -462,17 +496,23 @@ function viewDash() {
   else panelSubs();
 }
 
+var GROUPS = [];
 function panelApps() {
-  sb.from("apps").select("id,title,created_at,folder").eq("space_code", ST.space.code)
+  sb.from("apps").select("id,title,created_at,folder,position").eq("space_code", ST.space.code)
     .order("created_at").then(function (r) {
-      ST.apps = r.data || [];
+      ST.apps = sortApps(r.data || []);
       var n = 0;
       var rows = ST.apps.length
-        ? groupByFolder(ST.apps).map(function (g) {
-            return '<div class="fold">' + esc(g.label) + '<b>' + g.rows.length + '개</b></div>' +
-              g.rows.map(function (a) {
+        ? (GROUPS = groupByFolder(ST.apps)).map(function (g, gi) {
+            return '<div class="fold"><span class="dl">' +
+              '<button class="btn-d fup" data-g="' + gi + '" title="폴더 위로">▲</button>' +
+              '<button class="btn-d fdn" data-g="' + gi + '" title="폴더 아래로">▼</button>' +
+              esc(g.label) + '</span><b>' + g.rows.length + '개</b></div>' +
+              g.rows.map(function (a, ai) {
                 n++;
                 return '<div class="item"><span class="num">' + String(n).padStart(2, "0") + '</span>' +
+                  '<span class="ord"><button class="btn-d aup" data-g="' + gi + '" data-a="' + ai + '">▲</button>' +
+                  '<button class="btn-d adn" data-g="' + gi + '" data-a="' + ai + '">▼</button></span>' +
                   '<div class="grow"><div class="t">' + esc(a.title) + '</div>' +
                   '<div class="m">' + fmt(a.created_at) + ' 등록</div></div>' +
                   '<button class="btn-s ren" data-id="' + a.id + '" data-t="' + esc(a.title) + '">제목</button>' +
@@ -522,13 +562,38 @@ function panelApps() {
         if (!title) return setErr("과제 제목을 입력하세요.");
         if (!html.trim()) return setErr("HTML 코드를 붙여넣거나 파일을 고르세요.");
         var btn = $("#addapp"); btn.disabled = true; setErr("");
-        sb.from("apps").insert({ space_code: ST.space.code, title: title, html: html, folder: folder || null })
+        sb.from("apps").insert({ space_code: ST.space.code, title: title, html: html,
+          folder: folder || null, position: ST.apps.length })
           .then(function (r) {
             btn.disabled = false;
             if (r.error) return setErr("저장하지 못했습니다: " + r.error.message);
             panelApps();
           });
       });
+      var reorder = function (fn) {
+        return function (e) {
+          var b = e.currentTarget;
+          app.querySelectorAll(".ord button, .fup, .fdn").forEach(function (x) { x.disabled = true; });
+          if (!fn(Number(b.dataset.g), Number(b.dataset.a))) {
+            app.querySelectorAll(".ord button, .fup, .fdn").forEach(function (x) { x.disabled = false; });
+            return;
+          }
+          saveOrder(GROUPS, panelApps);
+        };
+      };
+      app.querySelectorAll(".aup").forEach(function (b) {
+        b.addEventListener("click", reorder(function (g, a) { return swap(GROUPS[g].rows, a, a - 1); }));
+      });
+      app.querySelectorAll(".adn").forEach(function (b) {
+        b.addEventListener("click", reorder(function (g, a) { return swap(GROUPS[g].rows, a, a + 1); }));
+      });
+      app.querySelectorAll(".fup").forEach(function (b) {
+        b.addEventListener("click", reorder(function (g) { return swap(GROUPS, g, g - 1); }));
+      });
+      app.querySelectorAll(".fdn").forEach(function (b) {
+        b.addEventListener("click", reorder(function (g) { return swap(GROUPS, g, g + 1); }));
+      });
+
       app.querySelectorAll(".ren").forEach(function (b) {
         b.addEventListener("click", function () {
           var next = window.prompt("과제 제목을 바꿉니다.", b.dataset.t);
@@ -766,8 +831,8 @@ function studentEnter(code) {
 
 function studentApps() {
   render('<div class="card"><div class="empty">과제를 불러오는 중…</div></div>');
-  sb.from("apps").select("id,title,folder").eq("space_code", ST.space.code).order("created_at").then(function (r) {
-    ST.apps = r.data || [];
+  sb.from("apps").select("id,title,folder,position").eq("space_code", ST.space.code).order("created_at").then(function (r) {
+    ST.apps = sortApps(r.data || []);
     render(
       '<div class="between"><span class="m">' + esc(ST.space.title) + '</span>' +
         '<span class="m">' + esc(ST.student) + '</span></div>' +
