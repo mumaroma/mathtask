@@ -66,7 +66,10 @@
     border-bottom: 2px solid transparent; border-radius: 0; }
   .tab.on { color: var(--blue); border-bottom-color: var(--blue); }
 
-  .item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .item { display: flex; align-items: center; gap: 8px; padding: 12px 0;
+    border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .item .grow { flex: 1 1 180px; }
+  .titlerow { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
   .item:last-child { border-bottom: none; }
   .grow { flex: 1; min-width: 0; }
   .t { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
@@ -414,7 +417,8 @@ function viewDash() {
     '<div class="between">' +
       '<button class="btn-s" id="back">← 내 공간 목록</button>' +
       '<span class="m">' + esc(ST.user.email) + '</span></div>' +
-    '<div class="card"><h2>' + esc(sp.title) + '</h2>' +
+    '<div class="card"><div class="titlerow"><h2>' + esc(sp.title) + '</h2>' +
+      '<button class="btn-d" id="renSpace">이름 수정</button></div>' +
       '<p class="hint">코드를 알려 주거나 링크를 보내세요. 링크로 들어온 학생은 코드를 입력하지 않아도 됩니다.</p>' +
       '<div class="row"><span class="code-chip">' + esc(sp.code) + '</span>' +
       '<button class="btn-s" id="cpCode">코드 복사</button>' +
@@ -431,6 +435,18 @@ function viewDash() {
   on("#cpCode", "click", function (e) { copy(sp.code, e.target); });
   on("#cpLink", "click", function (e) { copy(shareLink(sp.code), e.target); });
   on("#openLink", "click", function () { window.open(shareLink(sp.code), "_blank"); });
+  on("#renSpace", "click", function () {
+    var next = window.prompt("과제 공간 이름을 바꿉니다.", sp.title);
+    if (next === null) return;
+    next = next.trim();
+    if (!next) return alert("이름은 비워 둘 수 없습니다.");
+    sb.from("spaces").update({ title: next }).eq("code", sp.code).then(function (r) {
+      if (r.error) return alert("바꾸지 못했습니다: " + r.error.message);
+      sp.title = next;
+      ST.spaces.forEach(function (x) { if (x.code === sp.code) x.title = next; });
+      viewDash();
+    });
+  });
   app.querySelectorAll(".tab").forEach(function (b) {
     b.addEventListener("click", function () { ST.tab = b.dataset.tab; viewDash(); });
   });
@@ -453,6 +469,7 @@ function panelApps() {
                 return '<div class="item"><span class="num">' + String(n).padStart(2, "0") + '</span>' +
                   '<div class="grow"><div class="t">' + esc(a.title) + '</div>' +
                   '<div class="m">' + fmt(a.created_at) + ' 등록</div></div>' +
+                  '<button class="btn-s ren" data-id="' + a.id + '" data-t="' + esc(a.title) + '">제목</button>' +
                   '<button class="btn-s move" data-id="' + a.id + '" data-f="' + esc(a.folder || "") + '">폴더</button>' +
                   '<button class="btn-s prev" data-id="' + a.id + '">미리보기</button>' +
                   '<button class="btn-d del" data-id="' + a.id + '">삭제</button></div>';
@@ -506,6 +523,19 @@ function panelApps() {
             panelApps();
           });
       });
+      app.querySelectorAll(".ren").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var next = window.prompt("과제 제목을 바꿉니다.", b.dataset.t);
+          if (next === null) return;
+          next = next.trim();
+          if (!next) return alert("제목은 비워 둘 수 없습니다.");
+          sb.from("apps").update({ title: next }).eq("id", b.dataset.id).then(function (r) {
+            if (r.error) return alert("바꾸지 못했습니다: " + r.error.message);
+            panelApps();
+          });
+        });
+      });
+
       app.querySelectorAll(".move").forEach(function (b) {
         b.addEventListener("click", function () {
           var cur = b.dataset.f || "";
