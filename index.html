@@ -85,6 +85,12 @@
     letter-spacing: .3px; padding: 16px 0 7px; border-bottom: 1px solid var(--line); }
   .dayhead:first-of-type { padding-top: 4px; }
   .dayhead b { font-weight: 400; color: var(--ink2); }
+  .dayhead .dbtns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dl { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    font-size: inherit; font-weight: inherit; color: inherit; margin: 0; }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--blue); cursor: pointer; flex: none; }
+  .thumb .foot { display: flex; justify-content: space-between; align-items: center; }
+  .thumb .foot .dl { font-size: 11.5px; color: var(--ink2); font-family: var(--mono); }
   .empty { text-align: center; padding: 28px 12px; color: var(--ink2); font-size: 13px; line-height: 1.7; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
@@ -576,21 +582,31 @@ function previewApp(id) {
 
 function panelLog() {
   sb.from("visits").select("id,student_name,created_at").eq("space_code", ST.space.code)
-    .order("created_at", { ascending: false }).limit(300).then(function (r) {
+    .order("created_at", { ascending: false }).limit(500).then(function (r) {
       var rows = (r.data || []);
       $("#panel").innerHTML =
         '<div class="card"><h2>접속 기록 <span class="num">' + rows.length + '</span></h2>' +
-        '<p class="hint">학생이 이름을 넣고 들어온 시각입니다. 삭제는 두 번 눌러야 지워집니다.</p>' +
+        '<p class="hint">날짜별로 묶여 있습니다. 왼쪽 네모를 눌러 고른 뒤 선택 삭제하거나, 그날 것을 한 번에 지울 수 있습니다.</p>' +
         (rows.length
-          ? groupByDay(rows).map(function (g) {
-              return '<div class="dayhead">' + esc(g.label) + '<b>' + g.rows.length + '명</b></div>' +
+          ? groupByDay(rows).map(function (g, gi) {
+              return '<div class="daygroup" data-g="' + gi + '">' +
+                '<div class="dayhead"><label class="dl"><input type="checkbox" class="dchk">' +
+                  esc(g.label) + '</label>' +
+                '<span class="dbtns"><b>' + g.rows.length + '명</b>' +
+                '<button class="btn-d dsel">선택 삭제</button>' +
+                '<button class="btn-d dall">전체 삭제</button></span></div>' +
                 g.rows.map(function (v) {
-                  return '<div class="item"><div class="grow"><div class="t">' + esc(v.student_name) + '</div></div>' +
+                  return '<div class="item"><input type="checkbox" class="chk" data-id="' + v.id + '">' +
+                    '<div class="grow"><div class="t">' + esc(v.student_name) + '</div></div>' +
                     '<div class="m">' + hm(v.created_at) + '</div>' +
                     '<button class="btn-d vdel" data-id="' + v.id + '">삭제</button></div>';
-                }).join("");
+                }).join("") + '</div>';
             }).join("")
           : '<div class="empty">아직 들어온 학생이 없습니다.</div>') + '</div>';
+
+      wireGroups(function (ids) {
+        return sb.from("visits").delete().in("id", ids);
+      }, panelLog);
 
       app.querySelectorAll(".vdel").forEach(function (b) {
         b.addEventListener("click", function () {
@@ -605,17 +621,74 @@ function panelLog() {
     });
 }
 
+/* 날짜 묶음의 전체 선택 · 선택 삭제 · 전체 삭제 */
+function wireGroups(deleteFn, reload) {
+  app.querySelectorAll(".daygroup").forEach(function (grp) {
+    var boxes = grp.querySelectorAll(".chk");
+    var head = grp.querySelector(".dchk");
+
+    head.addEventListener("change", function () {
+      boxes.forEach(function (c) { c.checked = head.checked; });
+    });
+    boxes.forEach(function (c) {
+      c.addEventListener("change", function () {
+        var all = Array.prototype.every.call(boxes, function (x) { return x.checked; });
+        head.checked = all;
+      });
+    });
+
+    var run = function (btn, list, label) {
+      if (!list.length) { alert("고른 항목이 없습니다."); return; }
+      if (btn.dataset.armed !== "1") {
+        btn.dataset.armed = "1";
+        btn.textContent = list.length + "건 정말 삭제";
+        setTimeout(function () {
+          if (btn.dataset.armed === "1") { btn.dataset.armed = ""; btn.textContent = label; }
+        }, 4000);
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = "지우는 중…";
+      var ids = list.map(function (c) { return c.dataset.id; });
+      var paths = list.map(function (c) { return c.dataset.path; }).filter(Boolean);
+      var step = paths.length
+        ? sb.storage.from("submissions").remove(paths).then(function () { return deleteFn(ids); })
+        : deleteFn(ids);
+      step.then(function (r) {
+        if (r && r.error) {
+          btn.disabled = false; btn.dataset.armed = ""; btn.textContent = label;
+          alert("지우지 못했습니다: " + r.error.message);
+          return;
+        }
+        reload();
+      });
+    };
+
+    grp.querySelector(".dsel").addEventListener("click", function (e) {
+      run(e.target, Array.prototype.filter.call(boxes, function (c) { return c.checked; }), "선택 삭제");
+    });
+    grp.querySelector(".dall").addEventListener("click", function (e) {
+      run(e.target, Array.prototype.slice.call(boxes), "전체 삭제");
+    });
+  });
+}
+
 function panelSubs() {
   sb.from("submissions").select("*").eq("space_code", ST.space.code)
-    .order("created_at", { ascending: false }).limit(300).then(function (r) {
+    .order("created_at", { ascending: false }).limit(500).then(function (r) {
       var rows = r.data || [];
       var url = function (p) { return sb.storage.from("submissions").getPublicUrl(p).data.publicUrl; };
       $("#panel").innerHTML =
         '<div class="card"><h2>제출 결과 <span class="num">' + rows.length + '</span></h2>' +
-        '<p class="hint">학생이 보낸 캡처입니다. 눌러서 크게 볼 수 있고, 삭제는 두 번 눌러야 지워집니다.</p>' +
+        '<p class="hint">날짜별로 묶여 있습니다. 카드를 눌러 크게 보고, 네모를 골라 선택 삭제하거나 그날 것을 한 번에 지울 수 있습니다.</p>' +
         (rows.length
-          ? groupByDay(rows).map(function (g) {
-              return '<div class="dayhead">' + esc(g.label) + '<b>' + g.rows.length + '건</b></div>' +
+          ? groupByDay(rows).map(function (g, gi) {
+              return '<div class="daygroup" data-g="' + gi + '">' +
+                '<div class="dayhead"><label class="dl"><input type="checkbox" class="dchk">' +
+                  esc(g.label) + '</label>' +
+                '<span class="dbtns"><b>' + g.rows.length + '건</b>' +
+                '<button class="btn-d dsel">선택 삭제</button>' +
+                '<button class="btn-d dall">전체 삭제</button></span></div>' +
                 '<div class="grid" style="margin-top:10px">' + g.rows.map(function (s) {
                   return '<div class="thumb"><div class="open" data-p="' + esc(s.image_path) + '" data-n="' +
                     esc(s.student_name + " · " + (s.app_title || "") + " · " + fmt(s.created_at) +
@@ -623,11 +696,17 @@ function panelSubs() {
                     '<img loading="lazy" src="' + esc(url(s.image_path)) + '" alt="제출 캡처">' +
                     '<div class="cap"><b>' + esc(s.student_name) + '</b>' +
                     '<i>' + esc(s.app_title || "") + '</i><i>' + hm(s.created_at) + '</i></div></div>' +
-                    '<div class="foot"><button class="btn-d sdel" data-id="' + s.id +
+                    '<div class="foot"><label class="dl"><input type="checkbox" class="chk" data-id="' + s.id +
+                    '" data-path="' + esc(s.image_path) + '">고르기</label>' +
+                    '<button class="btn-d sdel" data-id="' + s.id +
                     '" data-path="' + esc(s.image_path) + '">삭제</button></div></div>';
-                }).join("") + '</div>';
+                }).join("") + '</div></div>';
             }).join("")
           : '<div class="empty">아직 제출된 결과가 없습니다.</div>') + '</div><div id="modal"></div>';
+
+      wireGroups(function (ids) {
+        return sb.from("submissions").delete().in("id", ids);
+      }, panelSubs);
 
       app.querySelectorAll(".sdel").forEach(function (b) {
         b.addEventListener("click", function () {
@@ -653,7 +732,6 @@ function panelSubs() {
       });
     });
 }
-
 /* ── 학생 ───────────────────────────────────────────────── */
 function studentEnter(code) {
   render('<div class="card"><div class="empty">과제 공간을 찾는 중…</div></div>');
