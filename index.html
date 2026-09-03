@@ -32,6 +32,16 @@
   .steps div { font-size: 13px; color: var(--ink2); display: flex; gap: 10px; align-items: baseline; }
 
   label { display: block; font-size: 12px; font-weight: 600; color: var(--ink2); margin-bottom: 5px; }
+  select { width: 100%; font-family: var(--font); font-size: 16px; color: var(--ink);
+    background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 11px; outline: none; margin-bottom: 12px; }
+  select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(27,73,101,.12); }
+  .pickbox { background: var(--paper2); border-radius: 12px; padding: 20px; text-align: left; }
+  .pickbox h2 { font-size: 15px; margin-bottom: 12px; }
+  .ftog { width: 100%; background: none; border: none; border-bottom: 1px solid var(--line);
+    border-radius: 0; padding: 15px 2px 7px; display: flex; justify-content: space-between;
+    align-items: baseline; font-size: 13px; font-weight: 700; color: var(--blue); }
+  .ftog b { font-weight: 400; font-size: 11.5px; color: var(--ink2); font-family: var(--mono); }
   input[type=text], textarea { width: 100%; font-family: var(--font); font-size: 16px; color: var(--ink);
     background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px 11px;
     outline: none; margin-bottom: 12px; }
@@ -496,6 +506,34 @@ function viewDash() {
   else panelSubs();
 }
 
+/* 폴더 선택 상자 만들기 */
+function folderSelect(id, current, folders) {
+  var opts = '<option value=""' + (current ? "" : " selected") + '>폴더 없음</option>';
+  folders.forEach(function (f) {
+    opts += '<option value="' + esc(f) + '"' + (f === current ? " selected" : "") + '>' + esc(f) + '</option>';
+  });
+  opts += '<option value="__new">+ 새 폴더 만들기…</option>';
+  return '<select id="' + id + '">' + opts + '</select>';
+}
+
+/* 선택 상자 + 새 폴더 칸에서 최종 폴더 이름 읽기 (미입력이면 null) */
+function readFolder(selId, inputId) {
+  var v = $("#" + selId).value;
+  if (v !== "__new") return v;
+  var t = $("#" + inputId).value.trim();
+  return t || null;
+}
+
+/* '새 폴더 만들기'를 고르면 입력칸이 나타나도록 */
+function wireFolderSelect(selId, inputId) {
+  var sel = $("#" + selId), box = $("#" + inputId);
+  if (!sel || !box) return;
+  sel.addEventListener("change", function () {
+    box.style.display = sel.value === "__new" ? "block" : "none";
+    if (sel.value === "__new") box.focus();
+  });
+}
+
 var GROUPS = [];
 function panelApps() {
   sb.from("apps").select("id,title,created_at,folder,position").eq("space_code", ST.space.code)
@@ -534,11 +572,8 @@ function panelApps() {
         '<div class="card"><h2>과제 추가</h2>' +
           '<p class="hint">HTML 파일 하나로 된 활동을 그대로 올립니다. 코드를 붙여넣거나 .html 파일을 고르세요.</p>' +
           '<label>과제 제목</label><input type="text" id="atitle" placeholder="예: 활동 1 — 일차함수의 그래프">' +
-          '<label>폴더 (선택 — 비워 두면 폴더 없음)</label>' +
-          '<input type="text" id="afolder" list="flist" placeholder="예: 1학기 · 함수 단원">' +
-          '<datalist id="flist">' + folders.map(function (f) {
-            return '<option value="' + esc(f) + '">';
-          }).join("") + '</datalist>' +
+          '<label>폴더</label>' + folderSelect("afolder", "", folders) +
+          '<input type="text" id="anewf" placeholder="새 폴더 이름" style="display:none">' +
           '<label>HTML 코드</label><textarea id="ahtml" placeholder="&lt;!DOCTYPE html&gt; …"></textarea>' +
           '<div class="row"><button class="btn-s" id="pickfile">.html 파일 고르기</button>' +
           '<button class="btn-p" id="addapp">과제 추가</button></div>' +
@@ -546,6 +581,7 @@ function panelApps() {
           '<div class="err" id="err" style="margin-top:10px"></div></div>' +
         '<div id="modal"></div>';
 
+      wireFolderSelect("afolder", "anewf");
       on("#pickfile", "click", function () { $("#hfile").click(); });
       on("#hfile", "change", function (e) {
         var f = e.target.files[0]; if (!f) return;
@@ -558,7 +594,8 @@ function panelApps() {
       });
       on("#addapp", "click", function () {
         var title = $("#atitle").value.trim(), html = $("#ahtml").value;
-        var folder = $("#afolder").value.trim();
+        var folder = readFolder("afolder", "anewf");
+        if (folder === null) return setErr("새 폴더 이름을 입력하세요.");
         if (!title) return setErr("과제 제목을 입력하세요.");
         if (!html.trim()) return setErr("HTML 코드를 붙여넣거나 파일을 고르세요.");
         var btn = $("#addapp"); btn.disabled = true; setErr("");
@@ -610,13 +647,22 @@ function panelApps() {
       app.querySelectorAll(".move").forEach(function (b) {
         b.addEventListener("click", function () {
           var cur = b.dataset.f || "";
-          var next = window.prompt("옮길 폴더 이름을 적으세요.\n비워 두면 폴더 없음으로 갑니다." +
-            (folders.length ? "\n\n지금 있는 폴더: " + folders.join(", ") : ""), cur);
-          if (next === null) return;
-          next = next.trim();
-          sb.from("apps").update({ folder: next || null }).eq("id", b.dataset.id).then(function (r) {
-            if (r.error) return alert("옮기지 못했습니다: " + r.error.message);
-            panelApps();
+          $("#modal").innerHTML =
+            '<div class="modal"><div class="mbox"><div class="pickbox">' +
+            '<h2>폴더 옮기기</h2>' +
+            '<label>옮길 폴더를 고르세요</label>' + folderSelect("mfolder", cur, folders) +
+            '<input type="text" id="mnewf" placeholder="새 폴더 이름" style="display:none">' +
+            '<div class="row"><button class="btn-p" id="mok">옮기기</button>' +
+            '<button class="btn-s" id="mcancel">취소</button></div></div></div></div>';
+          wireFolderSelect("mfolder", "mnewf");
+          on("#mcancel", "click", function () { $("#modal").innerHTML = ""; });
+          on("#mok", "click", function () {
+            var next = readFolder("mfolder", "mnewf");
+            if (next === null) return alert("새 폴더 이름을 입력하세요.");
+            sb.from("apps").update({ folder: next || null }).eq("id", b.dataset.id).then(function (r) {
+              if (r.error) return alert("옮기지 못했습니다: " + r.error.message);
+              panelApps();
+            });
           });
         });
       });
@@ -840,18 +886,30 @@ function studentApps() {
       (ST.apps.length
         ? (function () {
             var n = 0, gs = groupByFolder(ST.apps);
-            var one = gs.length === 1 && gs[0].label === "폴더 없음";
-            return gs.map(function (g) {
-              return (one ? "" : '<div class="fold">' + esc(g.label) + '<b>' + g.rows.length + '개</b></div>') +
-                g.rows.map(function (a) {
-                  n++;
-                  return '<div class="item"><span class="num">' + String(n).padStart(2, "0") + '</span>' +
-                    '<div class="grow"><div class="t">' + esc(a.title) + '</div></div>' +
-                    '<button class="btn-p open" data-id="' + a.id + '">열기</button></div>';
-                }).join("");
+            var one = gs.length === 1 && gs[0].plain;
+            return gs.map(function (g, gi) {
+              var body = g.rows.map(function (a) {
+                n++;
+                return '<div class="item"><span class="num">' + String(n).padStart(2, "0") + '</span>' +
+                  '<div class="grow"><div class="t">' + esc(a.title) + '</div></div>' +
+                  '<button class="btn-p open" data-id="' + a.id + '">열기</button></div>';
+              }).join("");
+              if (one) return body;
+              return '<button class="ftog" data-i="' + gi + '"><span>▾ ' + esc(g.label) + '</span>' +
+                '<b>' + g.rows.length + '개</b></button>' +
+                '<div class="fbody" id="fb' + gi + '">' + body + '</div>';
             }).join("");
           })()
         : '<div class="empty">아직 올라온 과제가 없습니다.</div>') + '</div>');
+    app.querySelectorAll(".ftog").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var body = $("#fb" + b.dataset.i);
+        var open = body.style.display !== "none";
+        body.style.display = open ? "none" : "block";
+        var lab = b.querySelector("span");
+        lab.textContent = (open ? "▸ " : "▾ ") + lab.textContent.slice(2);
+      });
+    });
     app.querySelectorAll(".open").forEach(function (b) {
       b.addEventListener("click", function () { studentOpen(b.dataset.id); });
     });
