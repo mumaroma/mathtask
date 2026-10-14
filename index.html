@@ -132,6 +132,17 @@
   .mbox p { color: #fff; font-size: 13px; margin: 10px 0 14px; font-family: var(--mono); overflow-wrap: anywhere; }
   .mbox img { max-width: 100%; max-height: 76vh; border-radius: 8px; background: #fff; }
 
+  /* HTML 제출 (추가) */
+  .thumb .face { height: 104px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; background: var(--blue); color: #fff; font-family: var(--mono); font-weight: 700; font-size: 18px; letter-spacing: 2px; }
+  .thumb .face small { font-size: 10.5px; font-weight: 400; letter-spacing: 0; opacity: .8; }
+  .thumb .face.data { background: var(--gold); }
+  .mbox.wide { max-width: 1100px; }
+  .mbox.wide .frame { height: 72vh; min-height: 420px; }
+  .mbox pre { text-align: left; background: #fff; color: var(--ink); border-radius: 8px; padding: 12px;
+    max-height: 30vh; overflow: auto; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; margin-top: 10px; }
+  .sendsec { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 6px; }
+  .sendsec h3 { font-size: 13.5px; margin-bottom: 6px; color: var(--blue); }
   .err { color: var(--terra); font-size: 12.5px; margin: -4px 0 10px; font-weight: 600; }
   .ok { color: var(--blue); font-size: 12.5px; margin: -4px 0 10px; font-weight: 600; }
   .banner { background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--gold);
@@ -791,7 +802,7 @@ function wireGroups(deleteFn, reload) {
 }
 
 function panelSubs() {
-  sb.from("submissions").select("*").eq("space_code", ST.space.code)
+  sb.from("submissions").select("id,space_code,app_id,app_title,student_name,image_path,note,created_at,html_len,has_payload").eq("space_code", ST.space.code)
     .order("created_at", { ascending: false }).limit(500).then(function (r) {
       var rows = r.data || [];
       var url = function (p) { return sb.storage.from("submissions").getPublicUrl(p).data.publicUrl; };
@@ -807,16 +818,20 @@ function panelSubs() {
                 '<button class="btn-d dsel">선택 삭제</button>' +
                 '<button class="btn-d dall">전체 삭제</button></span></div>' +
                 '<div class="grid" style="margin-top:10px">' + g.rows.map(function (s) {
-                  return '<div class="thumb"><div class="open" data-p="' + esc(s.image_path) + '" data-n="' +
+                  var face = s.image_path
+                    ? '<img loading="lazy" src="' + esc(url(s.image_path)) + '" alt="제출 캡처">'
+                    : s.html_len
+                      ? '<div class="face">HTML<small>' + Math.max(1, Math.round(s.html_len / 1000)) + 'KB · 눌러서 실행</small></div>'
+                      : '<div class="face data">DATA<small>눌러서 보기</small></div>';
+                  return '<div class="thumb"><div class="open" data-id="' + s.id + '" data-p="' + esc(s.image_path || "") + '" data-n="' +
                     esc(s.student_name + " · " + (s.app_title || "") + " · " + fmt(s.created_at) +
-                    (s.note ? " · " + s.note : "")) + '">' +
-                    '<img loading="lazy" src="' + esc(url(s.image_path)) + '" alt="제출 캡처">' +
+                    (s.note ? " · " + s.note : "")) + '">' + face +
                     '<div class="cap"><b>' + esc(s.student_name) + '</b>' +
                     '<i>' + esc(s.app_title || "") + '</i><i>' + hm(s.created_at) + '</i></div></div>' +
                     '<div class="foot"><label class="dl"><input type="checkbox" class="chk" data-id="' + s.id +
-                    '" data-path="' + esc(s.image_path) + '">고르기</label>' +
+                    '" data-path="' + esc(s.image_path || "") + '">고르기</label>' +
                     '<button class="btn-d sdel" data-id="' + s.id +
-                    '" data-path="' + esc(s.image_path) + '">삭제</button></div></div>';
+                    '" data-path="' + esc(s.image_path || "") + '">삭제</button></div></div>';
                 }).join("") + '</div></div>';
             }).join("")
           : '<div class="empty">아직 제출된 결과가 없습니다.</div>') + '</div><div id="modal"></div>';
@@ -829,7 +844,7 @@ function panelSubs() {
         b.addEventListener("click", function () {
           if (b.textContent === "삭제") { b.textContent = "정말 삭제"; return; }
           b.disabled = true;
-          sb.storage.from("submissions").remove([b.dataset.path]).then(function () {
+          (b.dataset.path ? sb.storage.from("submissions").remove([b.dataset.path]) : Promise.resolve()).then(function () {
             return sb.from("submissions").delete().eq("id", b.dataset.id);
           }).then(function (r) {
             if (r && r.error) { b.disabled = false; b.textContent = "삭제"; alert("지우지 못했습니다: " + r.error.message); return; }
@@ -840,6 +855,7 @@ function panelSubs() {
 
       app.querySelectorAll(".thumb .open").forEach(function (b) {
         b.addEventListener("click", function () {
+          if (!b.dataset.p) return openHtmlSub(b.dataset.id, b.dataset.n);
           $("#modal").innerHTML =
             '<div class="modal"><div class="mbox"><p>' + esc(b.dataset.n) + '</p>' +
             '<img src="' + esc(url(b.dataset.p)) + '" alt="제출 캡처">' +
@@ -849,6 +865,32 @@ function panelSubs() {
       });
     });
 }
+/* 교사: HTML / 자료 제출물 보기 (추가) — 샌드박스 iframe 안에서만 실행합니다 */
+function openHtmlSub(id, label) {
+  $("#modal").innerHTML = '<div class="modal"><div class="mbox wide"><p>불러오는 중…</p></div></div>';
+  sb.from("submissions").select("html,payload").eq("id", id).single().then(function (r) {
+    if (r.error || !r.data) { $("#modal").innerHTML = ""; alert("불러오지 못했습니다."); return; }
+    var d = r.data;
+    $("#modal").innerHTML =
+      '<div class="modal"><div class="mbox wide"><p>' + esc(label) + '</p>' +
+      (d.html ? '<div id="mholder"></div>' : '') +
+      (d.payload ? '<pre>' + esc(JSON.stringify(d.payload, null, 2)) + '</pre>' : '') +
+      '<div class="row" style="margin-top:12px;justify-content:center">' +
+      (d.html ? '<button class="btn-s" id="dl" style="background:#fff">HTML 내려받기</button>' : '') +
+      '<button class="btn-p" id="close">닫기</button></div></div></div>';
+    if (d.html) mountFrame("#mholder", d.html, "학생 제출 HTML");
+    on("#close", "click", function () { $("#modal").innerHTML = ""; });
+    on("#dl", "click", function () {
+      /* 새 탭에서 열지 않고 파일로만 받습니다 (새 탭은 이 사이트 권한으로 실행될 수 있어 위험) */
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([d.html], { type: "application/octet-stream" }));
+      a.download = (label.split(" · ").slice(0, 2).join("_") || "submission").replace(/[\\/:*?"<>|]/g, "") + ".html";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+    });
+  });
+}
+
 /* ── 함께 관리하는 교사 ───────────────────────────────── */
 function panelMembers() {
   sb.from("space_members").select("id,email,created_at").eq("space_code", ST.space.code)
@@ -867,7 +909,7 @@ function panelMembers() {
           : '<div class="empty">아직 초대한 선생님이 없습니다.</div>') + '</div>' +
         '<div class="card"><h2>선생님 초대</h2>' +
         '<p class="hint">상대 선생님이 구글 로그인에 쓰는 이메일을 적으세요. ' +
-        '그 주소로 로그인하면 자기 공간 목록에 이 공간이 함께 보입니다. 따로 메일이 가지는 않으니 코드를 알려 주세요.</p>' +
+        '그 주소로 로그인하면 자기 공간 목록에 이 공간이 함께 보입니다. 따로 메일이 가지는 않으니 직접 알려 주세요.</p>' +
         '<label>이메일</label><input type="text" id="memail" placeholder="teacher@school.kr">' +
         '<div class="err" id="err"></div>' +
         '<button class="btn-p" id="minvite">초대하기</button></div>';
@@ -933,6 +975,7 @@ function studentEnter(code) {
 }
 
 function studentApps() {
+  if (ST.msgFn) { window.removeEventListener("message", ST.msgFn); ST.msgFn = null; }
   render('<div class="card"><div class="empty">과제를 불러오는 중…</div></div>');
   sb.rpc("space_apps", { c: ST.space.code }).then(function (r) {
     ST.apps = sortApps(r.data || []);
@@ -989,6 +1032,14 @@ function studentOpen(id) {
           '<div class="drop" id="drop">캡처 이미지를 여기에 붙여넣기(Ctrl+V)하거나 끌어다 놓으세요' +
             '<div style="margin-top:12px"><button class="btn-s" id="pick">사진 고르기</button></div></div>' +
           '<input type="file" id="file" accept="image/*" style="display:none">' +
+          '<div class="sendsec"><h3>HTML 파일로 보내기</h3>' +
+            '<p class="hint">과제에서 내려받은 HTML 파일이나 직접 만든 HTML 을 보낼 수 있습니다. 선생님은 작동하는 화면 그대로 봅니다.</p>' +
+            '<div class="row" style="margin-bottom:12px"><button class="btn-s" id="pickHtml">HTML 파일 고르기</button>' +
+            '<span class="m" id="htmlName"></span></div>' +
+            '<input type="file" id="htmlFile" accept=".html,.htm,text/html" style="display:none">' +
+            '<details style="margin-bottom:12px"><summary class="m" style="cursor:pointer">코드를 직접 붙여넣기</summary>' +
+            '<textarea id="htmlPaste" placeholder="<!DOCTYPE html> …" style="margin-top:8px"></textarea>' +
+            '<button class="btn-s" id="sendPaste">붙여넣은 코드 보내기</button></details></div>' +
           '<label>한마디 (선택)</label>' +
           '<input type="text" id="note" placeholder="예: 두 번째 문제가 헷갈렸어요">' +
           '<div class="err" id="err"></div><div class="ok" id="ok"></div></div></div>');
@@ -1008,7 +1059,77 @@ function studentOpen(id) {
       if (open) box.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
     wirePicker(function (file) { sendResult(file, a); });
+    wireHtmlSend(a);
+    listenTaskSubmit(a);
   });
+}
+
+/* ── HTML 제출 (추가) ─────────────────────────────────────── */
+var HTML_MAX = 500000;   /* 약 500KB. Supabase 의 check 제약과 같이 맞춥니다 */
+
+function wireHtmlSend(appRow) {
+  var btn = $("#pickHtml"), input = $("#htmlFile");
+  if (!btn) return;
+  btn.addEventListener("click", function () { input.click(); });
+  input.addEventListener("change", function () {
+    var f = input.files[0]; input.value = "";
+    if (!f) return;
+    if (!/\.html?$/i.test(f.name) && f.type !== "text/html") return setErr("HTML 파일(.html)만 보낼 수 있습니다.");
+    var r = new FileReader();
+    r.onload = function () { $("#htmlName").textContent = f.name; sendHtml(String(r.result), null, appRow, btn); };
+    r.onerror = function () { setErr("파일을 읽지 못했습니다."); };
+    r.readAsText(f, "utf-8");
+  });
+  on("#sendPaste", "click", function (e) {
+    sendHtml($("#htmlPaste").value, null, appRow, e.target);
+  });
+}
+
+function sendHtml(html, payload, appRow, btn) {
+  var ok = $("#ok");
+  html = html == null ? null : String(html);
+  setErr(""); if (ok) ok.textContent = "";
+  if (html !== null && !html.trim()) { setErr("보낼 HTML 이 비어 있습니다."); return Promise.resolve(false); }
+  if (html !== null && html.length > HTML_MAX) {
+    setErr("HTML 이 너무 큽니다(" + Math.round(html.length / 1000) + "KB). 이미지는 줄이거나 빼고 다시 보내세요.");
+    return Promise.resolve(false);
+  }
+  var old = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "보내는 중…"; }
+  return sb.from("submissions").insert({
+    space_code: ST.space.code, app_id: appRow.id, app_title: appRow.title,
+    student_name: ST.student, image_path: null, html: html, payload: payload || null,
+    note: ($("#note") && $("#note").value.trim()) || null
+  }).then(function (res) {
+    if (btn) { btn.disabled = false; btn.textContent = old; }
+    if (res.error) { setErr("보내지 못했습니다: " + res.error.message); return false; }
+    if (ok) ok.textContent = "선생님께 보냈습니다.";
+    if ($("#note")) $("#note").value = "";
+    if ($("#htmlPaste")) $("#htmlPaste").value = "";
+    return true;
+  });
+}
+
+/* 과제 HTML 안에서 parent.postMessage({ type: "mathtaskSubmit", html, data }, "*") 로 보내면 받습니다 */
+function listenTaskSubmit(appRow) {
+  if (ST.msgFn) window.removeEventListener("message", ST.msgFn);
+  ST.msgFn = function (e) {
+    var fr = app.querySelector("#holder iframe");
+    if (!fr || e.source !== fr.contentWindow) return;          /* 지금 열린 과제에서 온 것만 */
+    var d = e.data;
+    if (!d || d.type !== "mathtaskSubmit") return;
+    var reply = function (r) { try { fr.contentWindow.postMessage({ type: "mathtaskSubmitResult", ok: r }, "*"); } catch (x) { } };
+    if (!confirm("과제 결과를 선생님께 보낼까요?")) return reply(false);
+    var html = typeof d.html === "string" ? d.html : null;
+    var payload = null;
+    if (d.data !== undefined) {
+      try { payload = JSON.parse(JSON.stringify(d.data)); } catch (x) { payload = null; }
+      if (payload && JSON.stringify(payload).length > HTML_MAX) { setErr("보낼 자료가 너무 큽니다."); return reply(false); }
+    }
+    if (html === null && payload === null) return reply(false);
+    sendHtml(html, payload, appRow, null).then(reply);
+  };
+  window.addEventListener("message", ST.msgFn);
 }
 
 function sendResult(file, appRow) {
