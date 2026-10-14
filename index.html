@@ -214,6 +214,33 @@
   iframe.frame { border:1px solid #DCCFB4; }
   .linkbox { border:1.5px solid #DCCFB4; }
   .empty { color:#5F5E5A; }
+
+  .titlebtn { background:none; border:none; padding:0; font-size:14px; font-weight:600;
+    color:#2C2C2A; border-bottom:1.5px dotted #888780; border-radius:0; text-align:left;
+    font-family:var(--font); }
+  .titlebtn:hover { border-bottom-color:#1B4965; color:#1B4965; }
+  .iconbtn { background:#fff; border:1px solid #DCCFB4; border-radius:6px; padding:2px 5px;
+    margin-left:5px; color:#5F5E5A; line-height:0; box-shadow:none; vertical-align:2px; }
+  .iconbtn:hover { border-color:#2C2C2A; color:#2C2C2A; }
+  .iconbtn.danger { color:#993C1D; }
+  .iconbtn.armed { background:#FCEBEB; border-color:#A32D2D; color:#A32D2D; }
+  .mini { background:#fff; border:1.5px solid #2C2C2A; border-radius:4px; color:#993C1D;
+    font-size:10px; line-height:1; padding:2px 5px; box-shadow:none; }
+  .ord { display:inline-flex; flex-direction:column; gap:2px; flex:none; }
+  .fold .mini { margin-right:2px; }
+  .menuwrap { position:relative; display:inline-block; flex:none; }
+  .dots { padding:2px 10px; font-size:16px; line-height:1.4; }
+  .menu { position:absolute; right:0; top:calc(100% + 6px); z-index:20; width:190px;
+    background:#fff; border:2px solid #2C2C2A; border-radius:10px;
+    box-shadow:4px 4px 0 #E8D9B0; overflow:hidden; }
+  .menu[hidden] { display:none; }
+  .mi { display:flex; align-items:center; gap:8px; width:100%; background:#fff; border:none;
+    border-bottom:1px solid #E3D6B8; border-radius:0; padding:10px 12px; font-size:12.5px;
+    font-weight:500; color:#2C2C2A; text-align:left; box-shadow:none; }
+  .mi:last-child { border-bottom:none; }
+  .mi:hover { background:#FFF8E6; }
+  .mi svg { flex:none; color:#5F5E5A; }
+  .item .t { display:flex; align-items:center; flex-wrap:wrap; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -235,7 +262,7 @@ var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 var sb = null;
 var app = document.getElementById("app");
-var ST = { user: null, spaces: [], space: null, apps: [], student: "", tab: "apps" };
+var ST = { studentId: null, user: null, spaces: [], space: null, apps: [], student: "", tab: "apps" };
 
 /* ── 도우미 ─────────────────────────────────────────────── */
 function esc(s) {
@@ -314,6 +341,19 @@ function render(html) { app.innerHTML = html; window.scrollTo(0, 0); }
 function $(sel) { return app.querySelector(sel); }
 function on(sel, ev, fn) { var e = $(sel); if (e) e.addEventListener(ev, fn); }
 function setErr(msg) { var e = $("#err"); if (e) e.textContent = msg || ""; }
+
+var SV = function (d) {
+  return '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
+};
+var ICON = {
+  pencil: SV('<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/>'),
+  trash:  SV('<path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3"/>'),
+  play:   SV('<path d="M7 4v16l13-8z"/>'),
+  folder: SV('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+  code:   SV('<path d="M9 8l-5 4 5 4M15 8l5 4-5 4"/>'),
+  copy:   SV('<path d="M9 9h10v10H9zM5 15V5h10"/>')
+};
 
 var ALPH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function mkCode() {
@@ -575,6 +615,7 @@ function viewDash() {
       '<button class="tab' + (ST.tab === "apps" ? " on" : "") + '" data-tab="apps">과제 앱</button>' +
       '<button class="tab' + (ST.tab === "log" ? " on" : "") + '" data-tab="log">접속 기록</button>' +
       '<button class="tab' + (ST.tab === "sub" ? " on" : "") + '" data-tab="sub">제출 결과</button>' +
+      '<button class="tab' + (ST.tab === "stu" ? " on" : "") + '" data-tab="stu">학생 명단</button>' +
       (sp.owner === ST.user.id
         ? '<button class="tab' + (ST.tab === "mem" ? " on" : "") + '" data-tab="mem">함께 관리</button>'
         : '') +
@@ -603,6 +644,7 @@ function viewDash() {
   if (ST.tab === "apps") panelApps();
   else if (ST.tab === "log") panelLog();
   else if (ST.tab === "mem") panelMembers();
+  else if (ST.tab === "stu") panelStudents();
   else panelSubs();
 }
 
@@ -643,20 +685,29 @@ function panelApps() {
       var rows = ST.apps.length
         ? (GROUPS = groupByFolder(ST.apps)).map(function (g, gi) {
             return '<div class="fold"><span class="dl">' +
-              '<button class="btn-d fup" data-g="' + gi + '" title="폴더 위로">▲</button>' +
-              '<button class="btn-d fdn" data-g="' + gi + '" title="폴더 아래로">▼</button>' +
+              '<button class="mini fup" data-g="' + gi + '" title="폴더 위로">▲</button>' +
+              '<button class="mini fdn" data-g="' + gi + '" title="폴더 아래로">▼</button>' +
               esc(g.label) + '</span><b>' + g.rows.length + '개</b></div>' +
               g.rows.map(function (a, ai) {
                 n++;
                 return '<div class="item"><span class="num">' + String(n).padStart(2, "0") + '</span>' +
-                  '<span class="ord"><button class="btn-d aup" data-g="' + gi + '" data-a="' + ai + '">▲</button>' +
-                  '<button class="btn-d adn" data-g="' + gi + '" data-a="' + ai + '">▼</button></span>' +
-                  '<div class="grow"><div class="t">' + esc(a.title) + '</div>' +
+                  '<span class="ord"><button class="mini aup" data-g="' + gi + '" data-a="' + ai + '" title="위로">▲</button>' +
+                  '<button class="mini adn" data-g="' + gi + '" data-a="' + ai + '" title="아래로">▼</button></span>' +
+                  '<div class="grow"><div class="t">' +
+                    '<button class="titlebtn prev" data-id="' + a.id + '">' + esc(a.title) + '</button>' +
+                    '<button class="iconbtn ren" data-id="' + a.id + '" data-t="' + esc(a.title) + '" ' +
+                      'title="제목 수정" aria-label="제목 수정">' + ICON.pencil + '</button>' +
+                    '<button class="iconbtn danger del" data-id="' + a.id + '" ' +
+                      'title="삭제" aria-label="삭제">' + ICON.trash + '</button></div>' +
                   '<div class="m">' + fmt(a.created_at) + ' 등록</div></div>' +
-                  '<button class="btn-s ren" data-id="' + a.id + '" data-t="' + esc(a.title) + '">제목</button>' +
-                  '<button class="btn-s move" data-id="' + a.id + '" data-f="' + esc(a.folder || "") + '">폴더</button>' +
-                  '<button class="btn-s prev" data-id="' + a.id + '">미리보기</button>' +
-                  '<button class="btn-d del" data-id="' + a.id + '">삭제</button></div>';
+                  '<span class="menuwrap">' +
+                    '<button class="btn-s dots" data-m="' + a.id + '" aria-label="더 보기">⋯</button>' +
+                    '<div class="menu" id="m' + a.id + '" hidden>' +
+                      '<button class="mi prev" data-id="' + a.id + '">' + ICON.play + '미리보기</button>' +
+                      '<button class="mi move" data-id="' + a.id + '" data-f="' + esc(a.folder || "") + '">' + ICON.folder + '폴더 옮기기</button>' +
+                      '<button class="mi code" data-id="' + a.id + '">' + ICON.code + 'HTML 코드 보기</button>' +
+                      '<button class="mi cpto" data-id="' + a.id + '" data-t="' + esc(a.title) + '">' + ICON.copy + '다른 공간으로 복사</button>' +
+                    '</div></span></div>';
               }).join("");
           }).join("")
         : '<div class="empty">아직 과제가 없습니다.<br>아래에서 첫 과제를 올려 보세요.</div>';
@@ -710,9 +761,9 @@ function panelApps() {
       var reorder = function (fn) {
         return function (e) {
           var b = e.currentTarget;
-          app.querySelectorAll(".ord button, .fup, .fdn").forEach(function (x) { x.disabled = true; });
+          app.querySelectorAll(".ord .mini, .fup, .fdn").forEach(function (x) { x.disabled = true; });
           if (!fn(Number(b.dataset.g), Number(b.dataset.a))) {
-            app.querySelectorAll(".ord button, .fup, .fdn").forEach(function (x) { x.disabled = false; });
+            app.querySelectorAll(".ord .mini, .fup, .fdn").forEach(function (x) { x.disabled = false; });
             return;
           }
           saveOrder(GROUPS, panelApps);
@@ -767,16 +818,117 @@ function panelApps() {
         });
       });
 
+      app.querySelectorAll(".dots").forEach(function (b) {
+        b.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var box = $("#m" + b.dataset.m), was = box.hidden;
+          app.querySelectorAll(".menu").forEach(function (m) { m.hidden = true; });
+          box.hidden = !was;
+        });
+      });
+      app.querySelectorAll(".mi").forEach(function (b) {
+        b.addEventListener("click", function () {
+          app.querySelectorAll(".menu").forEach(function (m) { m.hidden = true; });
+        });
+      });
+      if (!window.__menuClose) {
+        window.__menuClose = true;
+        document.addEventListener("click", function () {
+          app.querySelectorAll(".menu").forEach(function (m) { m.hidden = true; });
+        });
+      }
+
+      app.querySelectorAll(".code").forEach(function (b) {
+        b.addEventListener("click", function () { showCode(b.dataset.id); });
+      });
+      app.querySelectorAll(".cpto").forEach(function (b) {
+        b.addEventListener("click", function () { copyToSpace(b.dataset.id, b.dataset.t); });
+      });
+
       app.querySelectorAll(".prev").forEach(function (b) {
         b.addEventListener("click", function () { previewApp(b.dataset.id); });
       });
       app.querySelectorAll("#panel .del").forEach(function (b) {
         b.addEventListener("click", function () {
-          if (b.textContent === "삭제") { b.textContent = "정말 삭제"; return; }
+          if (b.dataset.armed !== "1") {
+            b.dataset.armed = "1";
+            b.classList.add("armed");
+            b.title = "한 번 더 누르면 지워집니다";
+            setTimeout(function () {
+              if (b.dataset.armed === "1") { b.dataset.armed = ""; b.classList.remove("armed"); b.title = "삭제"; }
+            }, 4000);
+            return;
+          }
           sb.from("apps").delete().eq("id", b.dataset.id).then(panelApps);
         });
       });
     });
+}
+
+/* 과제의 HTML 코드 보기 */
+function showCode(id) {
+  sb.from("apps").select("title,html").eq("id", id).single().then(function (r) {
+    if (!r.data) return;
+    $("#modal").innerHTML =
+      '<div class="modal"><div class="mbox"><div class="pickbox">' +
+      '<h2>' + esc(r.data.title) + '</h2>' +
+      '<p class="hint">이 과제의 HTML 코드입니다. 그대로 복사해 고치거나 다른 곳에 쓸 수 있습니다.</p>' +
+      '<textarea id="codebox" readonly style="min-height:300px"></textarea>' +
+      '<div class="row"><button class="btn-p" id="cpcode">코드 복사</button>' +
+      '<button class="btn-s" id="dlcode">파일로 받기</button>' +
+      '<button class="btn-s" id="ccancel">닫기</button></div></div></div></div>';
+    $("#codebox").value = r.data.html;
+    on("#cpcode", "click", function (e) { copy(r.data.html, e.target); });
+    on("#dlcode", "click", function () {
+      var blob = new Blob([r.data.html], { type: "text/html" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = (r.data.title || "과제").replace(/[\\/:*?"<>|]/g, "") + ".html";
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    });
+    on("#ccancel", "click", function () { $("#modal").innerHTML = ""; });
+  });
+}
+
+/* 다른 과제 공간으로 복사 */
+function copyToSpace(id, title) {
+  var others = (ST.spaces || []).filter(function (x) { return x.code !== ST.space.code; });
+  if (!others.length) {
+    alert("복사해 넣을 다른 공간이 없습니다. 먼저 공간을 하나 더 만들어 주세요.");
+    return;
+  }
+  $("#modal").innerHTML =
+    '<div class="modal"><div class="mbox"><div class="pickbox">' +
+    '<h2>다른 공간으로 복사</h2>' +
+    '<p class="hint">' + esc(title) + ' 을(를) 복사합니다. 원본은 이 공간에 그대로 남습니다.</p>' +
+    '<label>어느 공간으로 보낼까요</label>' +
+    '<select id="tospace">' + others.map(function (x) {
+      return '<option value="' + esc(x.code) + '">' + esc(x.title) + ' · ' + esc(x.code) + '</option>';
+    }).join("") + '</select>' +
+    '<div class="err" id="err"></div>' +
+    '<div class="row"><button class="btn-p" id="docopy">복사하기</button>' +
+    '<button class="btn-s" id="pcancel">취소</button></div></div></div></div>';
+  on("#pcancel", "click", function () { $("#modal").innerHTML = ""; });
+  on("#docopy", "click", function () {
+    var to = $("#tospace").value, btn = $("#docopy");
+    btn.disabled = true; btn.textContent = "복사하는 중…";
+    sb.from("apps").select("title,html,folder").eq("id", id).single().then(function (r) {
+      if (!r.data) throw new Error("원본을 읽지 못했습니다.");
+      return sb.from("apps").insert({
+        space_code: to, title: r.data.title, html: r.data.html, folder: r.data.folder || null
+      });
+    }).then(function (rr) {
+      btn.disabled = false; btn.textContent = "복사하기";
+      if (rr && rr.error) return setErr("복사하지 못했습니다: " + rr.error.message);
+      $("#modal").innerHTML = "";
+      var nm = others.filter(function (x) { return x.code === to; })[0];
+      alert((nm ? nm.title : to) + " 으로 복사했습니다.");
+    }).catch(function (e) {
+      btn.disabled = false; btn.textContent = "복사하기";
+      setErr(e.message || "복사하지 못했습니다.");
+    });
+  });
 }
 
 function previewApp(id) {
@@ -1024,6 +1176,36 @@ function panelMembers() {
     });
 }
 
+/* ── 학생 명단 (교사용) ──────────────────────────────── */
+function panelStudents() {
+  sb.from("students").select("id,name,created_at,last_seen").eq("space_code", ST.space.code)
+    .order("name").then(function (r) {
+      var rows = r.data || [];
+      $("#panel").innerHTML =
+        '<div class="card"><h2>학생 명단 <span class="num">' + rows.length + '</span></h2>' +
+        '<p class="hint">학생이 처음 들어올 때 정한 이름입니다. 비밀번호를 잊은 학생은 지워 주세요. ' +
+        '지우면 그 이름으로 다시 등록할 수 있고, 이미 보낸 결과는 그대로 남습니다.</p>' +
+        (rows.length
+          ? rows.map(function (st) {
+              return '<div class="item"><div class="grow"><div class="t">' + esc(st.name) + '</div>' +
+                '<div class="m">마지막 접속 ' + fmt(st.last_seen) + '</div></div>' +
+                '<button class="btn-d stdel" data-id="' + st.id + '">비밀번호 초기화</button></div>';
+            }).join("")
+          : '<div class="empty">아직 등록한 학생이 없습니다.</div>') + '</div>';
+
+      app.querySelectorAll(".stdel").forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (b.textContent === "비밀번호 초기화") { b.textContent = "정말 초기화"; return; }
+          b.disabled = true;
+          sb.from("students").delete().eq("id", b.dataset.id).then(function (rr) {
+            if (rr.error) { b.disabled = false; b.textContent = "비밀번호 초기화"; alert("지우지 못했습니다: " + rr.error.message); return; }
+            panelStudents();
+          });
+        });
+      });
+    });
+}
+
 /* ── 학생 ───────────────────────────────────────────────── */
 function studentEnter(code) {
   render('<div class="card"><div class="empty">과제 공간을 찾는 중…</div></div>');
@@ -1037,24 +1219,59 @@ function studentEnter(code) {
       return;
     }
     ST.space = r.data;
-    render(
-      '<div class="card"><h2>' + esc(r.data.title) + '</h2>' +
-        '<p class="hint">' + esc(r.data.teacher_name || "선생님") + '의 과제 공간입니다. 이름을 입력하면 들어갑니다.</p>' +
-        '<label>이름</label><input type="text" id="name" placeholder="예: 3학년 2반 김민서">' +
-        '<div class="err" id="err"></div>' +
-        '<button class="btn-g" id="go">들어가기</button></div>');
-    var go = function () {
-      var name = $("#name").value.trim();
-      if (!name) return setErr("이름을 입력하세요.");
-      $("#go").disabled = true;
-      sb.from("visits").insert({ space_code: ST.space.code, student_name: name }).then(function () {
-        ST.student = name;
-        studentApps();
+    var saved = null;
+    try { saved = localStorage.getItem("mt-stu-" + ST.space.code); } catch (e) { }
+    if (saved) {
+      render('<div class="card"><div class="empty">이어서 들어가는 중…</div></div>');
+      sb.rpc("student_resume", { c: ST.space.code, tok: saved }).then(function (rr) {
+        var me = (rr.data || [])[0];
+        if (me) { ST.student = me.name; ST.studentId = me.token; studentApps(); }
+        else { try { localStorage.removeItem("mt-stu-" + ST.space.code); } catch (e) { } studentGate(); }
       });
-    };
-    on("#go", "click", go);
-    on("#name", "keydown", function (e) { if (e.key === "Enter") go(); });
+      return;
+    }
+    studentGate();
   });
+}
+
+function studentGate() {
+  render(
+    '<div class="card"><h2>' + esc(ST.space.title) + '</h2>' +
+      '<p class="hint">' + esc(ST.space.teacher_name || "선생님") + '의 과제 공간입니다. ' +
+      '이름과 네 자리 비밀번호를 적으세요. 처음이면 그대로 등록되고, 다음부터는 같은 번호로 들어와 ' +
+      '내가 보낸 것들을 볼 수 있습니다.</p>' +
+      '<label>이름</label><input type="text" id="name" placeholder="예: 3학년 2반 김민서">' +
+      '<label>네 자리 비밀번호</label>' +
+      '<input type="text" id="pin" inputmode="numeric" maxlength="8" placeholder="숫자 네 자리" ' +
+      'style="font-family:var(--mono);letter-spacing:6px">' +
+      '<label class="dl" style="font-size:12.5px;color:var(--ink2);margin-bottom:12px">' +
+      '<input type="checkbox" id="keep" checked> 이 기기에서는 다음부터 바로 들어가기</label>' +
+      '<div class="err" id="err"></div>' +
+      '<button class="btn-g" id="go">들어가기</button></div>');
+
+  var go = function () {
+    var name = $("#name").value.trim(), pin = $("#pin").value.trim();
+    if (!name) return setErr("이름을 입력하세요.");
+    if (pin.length < 4) return setErr("비밀번호는 네 자리 이상입니다.");
+    $("#go").disabled = true; setErr("");
+    sb.rpc("student_join", { c: ST.space.code, nm: name, pin: pin }).then(function (rr) {
+      $("#go").disabled = false;
+      if (rr.error) {
+        var m = rr.error.message || "";
+        if (m.indexOf("BADPIN") >= 0) return setErr("이미 쓰고 있는 이름입니다. 비밀번호가 다르면 선생님께 말씀드리세요.");
+        return setErr("들어가지 못했습니다: " + m);
+      }
+      var me = (rr.data || [])[0];
+      if (!me) return setErr("들어가지 못했습니다. 다시 시도하세요.");
+      ST.student = me.name; ST.studentId = me.token;
+      if ($("#keep").checked) {
+        try { localStorage.setItem("mt-stu-" + ST.space.code, me.token); } catch (e) { }
+      }
+      studentApps();
+    });
+  };
+  on("#go", "click", go);
+  on("#pin", "keydown", function (e) { if (e.key === "Enter") go(); });
 }
 
 function studentApps() {
@@ -1064,7 +1281,10 @@ function studentApps() {
     ST.apps = sortApps(r.data || []);
     render(
       '<div class="between"><span class="m">' + esc(ST.space.title) + '</span>' +
-        '<span class="m">' + esc(ST.student) + '</span></div>' +
+        '<span class="row" style="gap:8px;align-items:center">' +
+        '<span class="m">' + esc(ST.student) + '</span>' +
+        '<button class="btn-s" id="mine">내 제출 이력</button>' +
+        '<button class="btn-d" id="leave">나가기</button></span></div>' +
       '<div class="card"><h2>과제 목록</h2><p class="hint">과제를 골라 여세요.</p>' +
       (ST.apps.length
         ? (function () {
@@ -1084,6 +1304,11 @@ function studentApps() {
             }).join("");
           })()
         : '<div class="empty">아직 올라온 과제가 없습니다.</div>') + '</div>');
+    on("#mine", "click", studentHistory);
+    on("#leave", "click", function () {
+      try { localStorage.removeItem("mt-stu-" + ST.space.code); } catch (e) { }
+      ST.student = null; ST.studentId = null; studentGate();
+    });
     app.querySelectorAll(".ftog").forEach(function (b) {
       b.addEventListener("click", function () {
         var body = $("#fb" + b.dataset.i);
@@ -1095,6 +1320,60 @@ function studentApps() {
     });
     app.querySelectorAll(".open").forEach(function (b) {
       b.addEventListener("click", function () { studentOpen(b.dataset.id); });
+    });
+  });
+}
+
+function studentHistory() {
+  render('<div class="card"><div class="empty">내가 보낸 것을 찾는 중…</div></div>');
+  sb.rpc("student_history", { tok: ST.studentId }).then(function (r) {
+    var rows = r.data || [];
+    var url = function (p) { return sb.storage.from("submissions").getPublicUrl(p).data.publicUrl; };
+    render(
+      '<div class="between"><button class="btn-s" id="back">← 과제 목록</button>' +
+        '<span class="m">' + esc(ST.student) + '</span></div>' +
+      '<div class="card"><h2>내가 보낸 것 <span class="num">' + rows.length + '</span></h2>' +
+      '<p class="hint">선생님께 보낸 결과입니다. 눌러서 다시 볼 수 있습니다.</p>' +
+      (rows.length
+        ? groupByDay(rows).map(function (g) {
+            return '<div class="dayhead">' + esc(g.label) + '<b>' + g.rows.length + '건</b></div>' +
+              g.rows.map(function (h) {
+                var kind = h.image_path ? "사진" : h.html_len ? "HTML" : h.has_payload ? "기록" : "";
+                return '<div class="item"><span class="num">' + esc(kind) + '</span>' +
+                  '<div class="grow"><div class="t">' + esc(h.app_title || "과제") + '</div>' +
+                  (h.note ? '<div class="m">' + esc(h.note) + '</div>' : '') + '</div>' +
+                  '<div class="m">' + hm(h.created_at) + '</div>' +
+                  '<button class="btn-s hopen" data-id="' + h.id + '" data-p="' + esc(h.image_path || "") + '">다시 보기</button></div>';
+              }).join("");
+          }).join("")
+        : '<div class="empty">아직 보낸 것이 없습니다.<br>과제를 열고 결과를 보내 보세요.</div>') +
+      '</div><div id="modal"></div>');
+
+    on("#back", "click", studentApps);
+    app.querySelectorAll(".hopen").forEach(function (b) {
+      b.addEventListener("click", function () {
+        if (b.dataset.p) {
+          $("#modal").innerHTML =
+            '<div class="modal"><div class="mbox"><p>내가 보낸 사진</p>' +
+            '<img src="' + esc(url(b.dataset.p)) + '" alt="내가 보낸 결과">' +
+            '<div style="margin-top:12px"><button class="btn-p" id="close">닫기</button></div></div></div>';
+          on("#close", "click", function () { $("#modal").innerHTML = ""; });
+          return;
+        }
+        sb.rpc("student_submission", { tok: ST.studentId, sub: b.dataset.id }).then(function (rr) {
+          var d = (rr.data || [])[0];
+          if (!d) return;
+          var body = d.html ? d.html
+            : '<pre style="font-family:monospace;font-size:13px;white-space:pre-wrap;padding:16px">' +
+              esc(JSON.stringify(d.payload, null, 2)) + '</pre>';
+          $("#modal").innerHTML =
+            '<div class="modal"><div class="mbox"><p>' + esc(d.app_title || "과제") + '</p>' +
+            '<div id="holder"></div><div style="margin-top:12px">' +
+            '<button class="btn-p" id="close">닫기</button></div></div></div>';
+          mountFrame("#holder", body, d.app_title || "제출물");
+          on("#close", "click", function () { $("#modal").innerHTML = ""; });
+        });
+      });
     });
   });
 }
@@ -1181,7 +1460,8 @@ function sendHtml(html, payload, appRow, btn) {
   if (btn) { btn.disabled = true; btn.textContent = "보내는 중…"; }
   return sb.from("submissions").insert({
     space_code: ST.space.code, app_id: appRow.id, app_title: appRow.title,
-    student_name: ST.student, image_path: null, html: html, payload: payload || null,
+    student_name: ST.student, student_id: ST.studentId || null,
+    image_path: null, html: html, payload: payload || null,
     note: ($("#note") && $("#note").value.trim()) || null
   }).then(function (res) {
     if (btn) { btn.disabled = false; btn.textContent = old; }
@@ -1225,7 +1505,8 @@ function sendResult(file, appRow) {
         if (up.error) throw new Error(up.error.message);
         return sb.from("submissions").insert({
           space_code: ST.space.code, app_id: appRow.id, app_title: appRow.title,
-          student_name: ST.student, image_path: path, note: $("#note").value.trim() || null
+          student_name: ST.student, student_id: ST.studentId || null,
+          image_path: path, note: $("#note").value.trim() || null
         });
       });
   }).then(function (res) {
