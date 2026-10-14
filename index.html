@@ -149,6 +149,42 @@
     border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--ink2);
     line-height: 1.6; margin-bottom: 14px; }
   .banner code { font-family: var(--mono); font-size: 11.5px; color: var(--terra); }
+
+  .kit { background:#FFF8E6; border:2px solid #2C2C2A; border-radius:14px;
+    padding:26px 22px 24px; margin-bottom:16px; box-shadow:5px 5px 0 #E8D9B0; }
+  .kit .tag { display:inline-block; background:#F4C0D1; border:2px solid #2C2C2A;
+    border-radius:20px; padding:3px 13px; font-size:12px; font-weight:700; color:#4B1528;
+    transform:rotate(-3deg); margin-bottom:14px; }
+  .kit h2 { font-size:27px; line-height:1.35; letter-spacing:-.8px; margin-bottom:12px; color:#2C2C2A; }
+  .kit h2 em { font-style:normal; background:#FAC775; padding:0 7px; border-radius:3px;
+    box-decoration-break:clone; -webkit-box-decoration-break:clone; }
+  .kit p.lead { font-size:13.5px; color:#5F5E5A; line-height:1.75; margin-bottom:18px; max-width:46ch; }
+  .kit .btn-google { background:#2C2C2A; color:#FFF8E6; border:2px solid #2C2C2A;
+    box-shadow:4px 4px 0 #D85A30; font-weight:700; }
+  .kit .btn-google:active { transform:translate(2px,2px); box-shadow:2px 2px 0 #D85A30; }
+  .flow { width:100%; height:auto; display:block; margin:4px 0 20px; }
+  .kitcard { background:#FFF8E6; border:2px solid #2C2C2A; border-radius:14px;
+    padding:20px 20px 22px; margin-bottom:16px; box-shadow:5px 5px 0 #CDE8DC; }
+  .kitcard h2 { font-size:17px; color:#2C2C2A; margin-bottom:4px; }
+  .kitcard .hint { color:#5F5E5A; }
+  .kitcard input[type=text] { border:2px solid #2C2C2A; border-radius:10px; background:#fff;
+    font-family:var(--mono); letter-spacing:2px; }
+  .kitcard .btn-g { background:#5DCAA5; color:#04342C; border:2px solid #2C2C2A;
+    box-shadow:4px 4px 0 #2C2C2A; font-weight:700; }
+  .kitcard .btn-g:active { transform:translate(2px,2px); box-shadow:2px 2px 0 #2C2C2A; }
+  .kitgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; }
+  .kitgrid .who { display:inline-block; font-size:12px; font-weight:700; border:2px solid #2C2C2A;
+    border-radius:20px; padding:2px 12px; margin-bottom:12px; }
+  .kitgrid .who.t { background:#FAC775; color:#412402; transform:rotate(-2deg); }
+  .kitgrid .who.s { background:#9FE1CB; color:#04342C; transform:rotate(2deg); }
+  .tip { background:#FFF8E6; border:2px dashed #2C2C2A; border-radius:12px; padding:13px 16px;
+    font-size:12.5px; color:#444441; line-height:1.7; margin-bottom:16px; }
+  .tip a { color:#B7410E; font-weight:700; text-decoration:none; border-bottom:2px solid #FAC775; }
+  .kitsteps { display:grid; gap:9px; }
+  .kitsteps div { font-size:13px; color:#444441; display:flex; gap:10px; align-items:baseline; }
+  .kitsteps .num { background:#9FE1CB; border:1.5px solid #2C2C2A; border-radius:6px;
+    color:#04342C; padding:1px 6px; font-size:11px; }
+  @media (max-width:520px) { .kit h2 { font-size:22px; } }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -355,10 +391,11 @@ function boot() {
 /* ── 첫 화면 ────────────────────────────────────────────── */
 function viewHome() {
   render(
-    '<div class="hero">' +
-      '<h2>자신이 만든 과제를 배포하세요</h2>' +
-      '<p>만든 HTML 활동을 과제 공간에 올리면 학생은 코드나 링크 하나로 들어옵니다. ' +
-      '누가 언제 들어왔는지, 무엇을 제출했는지가 공간마다 따로 쌓입니다.</p>' +
+    '<div class="kit">' +
+      '<span class="tag">HTML 과제 배포소</span>' +
+      '<h2>자신이 만든 과제를<br><em>배포하세요</em></h2>' +
+      '<p class="lead">내가 만든 HTML 한 장이 다섯 글자 코드를 타고 학생들 화면으로 바로 갑니다.</p>' +
+      '<svg class="flow" viewBox="0 0 520 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="내가 만든 HTML 과제가 다섯 글자 코드를 거쳐 학생들 화면으로 바로 전달되는 그림"><g transform="rotate(-3 72 70)"><rect x="24" y="30" width="96" height="78" rx="8" fill="#fff" stroke="#2C2C2A" stroke-width="3"/><path d="M96 30 L120 54 L96 54 Z" fill="#FAC775" stroke="#2C2C2A" stroke-width="3" stroke-linejoin="round"/><text x="68" y="78" text-anchor="middle" font-family="monospace" font-size="21" font-weight="700" fill="#2C2C2A">&lt;/&gt;</text><text x="68" y="97" text-anchor="middle" font-size="11" fill="#5F5E5A">내 HTML 과제</text></g><path d="M132 70 H178" stroke="#2C2C2A" stroke-width="3" stroke-dasharray="7 6" stroke-linecap="round"/><path d="M172 63 L182 70 L172 77 Z" fill="#2C2C2A"/><g transform="rotate(4 232 70)"><rect x="186" y="50" width="92" height="40" rx="10" fill="#FAC775" stroke="#2C2C2A" stroke-width="3"/><text x="232" y="76" text-anchor="middle" font-family="monospace" font-size="18" font-weight="700" letter-spacing="3" fill="#412402">GYF2Q</text><text x="232" y="106" text-anchor="middle" font-size="11" fill="#5F5E5A">코드 한 줄이면 끝</text></g><path d="M288 70 H334" stroke="#2C2C2A" stroke-width="3" stroke-dasharray="7 6" stroke-linecap="round"/><path d="M328 63 L338 70 L328 77 Z" fill="#2C2C2A"/><g transform="rotate(-2 372 66)"><rect x="350" y="34" width="44" height="66" rx="7" fill="#9FE1CB" stroke="#2C2C2A" stroke-width="3"/><rect x="358" y="46" width="28" height="30" rx="3" fill="#fff" stroke="#2C2C2A" stroke-width="2"/><circle cx="372" cy="89" r="3.5" fill="#2C2C2A"/></g><g transform="rotate(5 428 72)"><rect x="406" y="40" width="44" height="66" rx="7" fill="#F4C0D1" stroke="#2C2C2A" stroke-width="3"/><rect x="414" y="52" width="28" height="30" rx="3" fill="#fff" stroke="#2C2C2A" stroke-width="2"/><circle cx="428" cy="95" r="3.5" fill="#2C2C2A"/></g><g transform="rotate(-4 484 64)"><rect x="462" y="32" width="44" height="66" rx="7" fill="#B5D4F4" stroke="#2C2C2A" stroke-width="3"/><rect x="470" y="44" width="28" height="30" rx="3" fill="#fff" stroke="#2C2C2A" stroke-width="2"/><circle cx="484" cy="87" r="3.5" fill="#2C2C2A"/></g><text x="428" y="131" text-anchor="middle" font-size="11" fill="#5F5E5A">학생들 화면에 바로</text></svg>' +
       '<button class="btn-google" id="login">' +
         '<svg viewBox="0 0 48 48"><path fill="#4285F4" d="M45 24c0-1.6-.1-2.7-.4-4H24v7.5h12c-.2 2-1.5 5-4.4 7l6.7 5.2C42.2 36 45 30.6 45 24z"/>' +
         '<path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-6.9-5.4c-1.9 1.3-4.4 2.2-7.6 2.2-5.8 0-10.7-3.9-12.5-9.2l-7.1 5.5C8 40.4 15.4 46 24 46z"/>' +
@@ -366,19 +403,33 @@ function viewHome() {
         '<path fill="#EA4335" d="M24 10.7c3.2 0 5.4 1.4 6.7 2.6l5.9-5.8C33 4.1 29.9 2 24 2 15.4 2 8 7.6 4.4 14.2l7.1 5.5c1.8-5.3 6.7-9 12.5-9z"/></svg>' +
         '구글 계정으로 시작하기</button>' +
     '</div>' +
-    '<div class="card">' +
+    '<div class="kitcard">' +
       '<h2>학생은 여기로</h2>' +
       '<p class="hint">선생님이 준 5자리 코드를 넣거나, 받은 링크를 그대로 붙여넣으세요.</p>' +
       '<input type="text" id="entry" placeholder="ABCDE 또는 https://…?c=ABCDE">' +
       '<div class="err" id="err"></div>' +
       '<button class="btn-g" id="join">과제 공간 들어가기</button>' +
     '</div>' +
-    '<div class="card"><div class="steps">' +
-      '<div><span class="num">01</span> 구글 계정으로 들어와 과제 공간을 하나 엽니다</div>' +
-      '<div><span class="num">02</span> 제목과 HTML을 넣어 과제를 추가합니다</div>' +
-      '<div><span class="num">03</span> 코드나 링크를 학생에게 알려 줍니다</div>' +
-      '<div><span class="num">04</span> 접속 기록과 제출된 캡처를 확인합니다</div>' +
-    '</div></div>');
+    '<div class="kitgrid">' +
+      '<div class="kitcard" style="box-shadow:5px 5px 0 #F7E2B8"><span class="who t">선생님은 이렇게</span>' +
+        '<div class="kitsteps">' +
+        '<div><span class="num">01</span> 구글 계정으로 로그인합니다</div>' +
+        '<div><span class="num">02</span> 과제 공간을 만들면 다섯 글자 코드가 생깁니다</div>' +
+        '<div><span class="num">03</span> 만든 HTML을 붙여넣거나 파일로 올립니다</div>' +
+        '<div><span class="num">04</span> 코드나 링크를 학생에게 보냅니다</div>' +
+        '<div><span class="num">05</span> 접속 기록과 제출 결과를 확인합니다</div>' +
+        '</div></div>' +
+      '<div class="kitcard" style="box-shadow:5px 5px 0 #CDE8DC"><span class="who s">학생은 이렇게</span>' +
+        '<div class="kitsteps">' +
+        '<div><span class="num">01</span> 받은 링크를 누르거나 코드를 입력합니다</div>' +
+        '<div><span class="num">02</span> 이름을 적고 들어갑니다</div>' +
+        '<div><span class="num">03</span> 과제를 골라 열고 활동합니다</div>' +
+        '<div><span class="num">04</span> 다 하면 결과를 선생님께 보냅니다</div>' +
+        '<div><span class="num">05</span> 가입도 로그인도 필요 없습니다</div>' +
+        '</div></div>' +
+    '</div>' +
+    '<div class="tip">링크가 길어 보이면 <a href="https://숏.한국" target="_blank" rel="noopener">숏.한국</a>에서 ' +
+      '짧게 줄여 보내세요. 칠판에 적거나 말로 불러 주기 좋습니다.</div>');
 
   on("#login", "click", function () {
     sb.auth.signInWithOAuth({
@@ -487,7 +538,10 @@ function viewDash() {
       '<button class="btn-s" id="cpCode">코드 복사</button>' +
       '<button class="btn-s" id="cpLink">링크 복사</button>' +
       '<button class="btn-s" id="openLink">링크 열기</button></div>' +
-      '<div class="linkbox">' + esc(shareLink(sp.code)) + '</div></div>' +
+      '<div class="linkbox">' + esc(shareLink(sp.code)) + '</div>' +
+      '<p class="hint" style="margin:10px 0 0">링크가 길면 ' +
+      '<a href="https://숏.한국" target="_blank" rel="noopener" style="color:var(--terra);font-weight:600">숏.한국</a>' +
+      '에서 줄여 보내시면 칠판에 적기 좋습니다.</p></div>' +
     '<div class="tabs">' +
       '<button class="tab' + (ST.tab === "apps" ? " on" : "") + '" data-tab="apps">과제 앱</button>' +
       '<button class="tab' + (ST.tab === "log" ? " on" : "") + '" data-tab="log">접속 기록</button>' +
