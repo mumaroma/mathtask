@@ -241,6 +241,20 @@
   .mi:hover { background:#FFF8E6; }
   .mi svg { flex:none; color:#5F5E5A; }
   .item .t { display:flex; align-items:center; flex-wrap:wrap; }
+
+  .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .filters select { width:auto; min-width:150px; margin-bottom:0; font-size:13px; padding:7px 10px; }
+  .mwrap { overflow-x:auto; margin:0 -4px; padding:0 4px 4px; }
+  table.matrix { border-collapse:collapse; font-size:12.5px; }
+  table.matrix th, table.matrix td { border:1px solid #DCCFB4; padding:6px 9px; text-align:center;
+    white-space:nowrap; }
+  table.matrix thead th { background:#FAC775; color:#412402; font-weight:700; font-size:11.5px;
+    border-color:#2C2C2A; }
+  table.matrix th.nm { text-align:left; background:#FCFAF3; color:#2C2C2A; font-weight:600;
+    position:sticky; left:0; }
+  table.matrix td.yes { background:#E1F5EE; color:#0F6E56; font-weight:700; }
+  table.matrix td.no { color:#B4B2A9; }
+  table.matrix td.sum { font-family:var(--mono); font-size:11.5px; color:#5B5348; background:#FCFAF3; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -527,6 +541,8 @@ function viewSpaces() {
             '<div class="grow"><div class="t">' + esc(s.title) + '</div>' +
             '<div class="m">' + fmt(s.created_at) + ' 개설</div></div>' +
             '<button class="btn-s link" data-code="' + esc(s.code) + '">링크</button>' +
+            '<button class="btn-s srn" data-code="' + esc(s.code) + '" data-t="' + esc(s.title) + '">이름</button>' +
+            '<button class="btn-s sdup" data-code="' + esc(s.code) + '" data-t="' + esc(s.title) + '">복제</button>' +
             '<button class="btn-p open" data-code="' + esc(s.code) + '">열기</button>' +
             (s.owner === ST.user.id
               ? '<button class="btn-d del" data-code="' + esc(s.code) + '">삭제</button>'
@@ -556,6 +572,21 @@ function viewSpaces() {
     app.querySelectorAll(".link").forEach(function (b) {
       b.addEventListener("click", function () { copy(shareLink(b.dataset.code), b); });
     });
+    app.querySelectorAll(".srn").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var next = window.prompt("공간 이름을 바꿉니다.", b.dataset.t);
+        if (next === null) return;
+        next = next.trim();
+        if (!next) return alert("이름은 비워 둘 수 없습니다.");
+        sb.from("spaces").update({ title: next }).eq("code", b.dataset.code).then(function (r) {
+          if (r.error) return alert("바꾸지 못했습니다: " + r.error.message);
+          viewSpaces();
+        });
+      });
+    });
+    app.querySelectorAll(".sdup").forEach(function (b) {
+      b.addEventListener("click", function () { duplicateSpace(b.dataset.code, b.dataset.t, b); });
+    });
     app.querySelectorAll(".del").forEach(function (b) {
       b.addEventListener("click", function () {
         if (b.textContent === "삭제") { b.textContent = "정말 삭제"; return; }
@@ -563,6 +594,45 @@ function viewSpaces() {
       });
     });
   });
+}
+
+function duplicateSpace(code, title, btn) {
+  var next = window.prompt("새 공간의 이름을 적으세요. 과제는 그대로 복사되고 학생 기록은 복사되지 않습니다.",
+    title + " (복사본)");
+  if (next === null) return;
+  next = next.trim();
+  if (!next) return alert("이름은 비워 둘 수 없습니다.");
+  btn.disabled = true; btn.textContent = "복제 중…";
+
+  var done = function (msg) {
+    btn.disabled = false; btn.textContent = "복제";
+    if (msg) alert(msg); else viewSpaces();
+  };
+
+  var attempt = function (n) {
+    var newCode = mkCode();
+    sb.from("spaces").insert({
+      code: newCode, owner: ST.user.id, title: next,
+      teacher_name: ST.user.user_metadata && ST.user.user_metadata.full_name || ""
+    }).then(function (r) {
+      if (r.error) {
+        if (r.error.code === "23505" && n < 5) return attempt(n + 1);
+        return done("새 공간을 만들지 못했습니다: " + r.error.message);
+      }
+      sb.from("apps").select("title,html,folder,position").eq("space_code", code)
+        .order("position", { ascending: true, nullsFirst: false }).then(function (rr) {
+          var list = (rr.data || []).map(function (a, i) {
+            return { space_code: newCode, title: a.title, html: a.html, folder: a.folder || null, position: i };
+          });
+          if (!list.length) return done();
+          sb.from("apps").insert(list).then(function (r3) {
+            if (r3.error) return done("공간은 만들었지만 과제를 옮기지 못했습니다: " + r3.error.message);
+            done();
+          });
+        });
+    });
+  };
+  attempt(0);
 }
 
 function createSpace() {
@@ -1039,10 +1109,33 @@ function wireGroups(deleteFn, reload) {
 function panelSubs() {
   sb.from("submissions").select("id,space_code,app_id,app_title,student_name,image_path,note,created_at,html_len,has_payload").eq("space_code", ST.space.code)
     .order("created_at", { ascending: false }).limit(500).then(function (r) {
-      var rows = r.data || [];
+      var all = r.data || [];
+      var f = ST.subFilter || (ST.subFilter = { app: "", stu: "" });
+      var apps = [], stus = [];
+      all.forEach(function (x) {
+        var t = x.app_title || "(과제 없음)";
+        if (apps.indexOf(t) < 0) apps.push(t);
+        if (stus.indexOf(x.student_name) < 0) stus.push(x.student_name);
+      });
+      apps.sort(function (a, b) { return a.localeCompare(b, "ko"); });
+      stus.sort(function (a, b) { return a.localeCompare(b, "ko"); });
+      var rows = all.filter(function (x) {
+        return (!f.app || (x.app_title || "(과제 없음)") === f.app) && (!f.stu || x.student_name === f.stu);
+      });
+      var opt = function (list, cur) {
+        return list.map(function (v) {
+          return '<option value="' + esc(v) + '"' + (v === cur ? " selected" : "") + '>' + esc(v) + '</option>';
+        }).join("");
+      };
       var url = function (p) { return sb.storage.from("submissions").getPublicUrl(p).data.publicUrl; };
       $("#panel").innerHTML =
-        '<div class="card"><h2>제출 결과 <span class="num">' + rows.length + '</span></h2>' +
+        '<div class="card"><h2>제출 결과 <span class="num">' + rows.length +
+        (rows.length !== all.length ? ' / ' + all.length : '') + '</span></h2>' +
+        '<div class="filters">' +
+        '<select id="fapp"><option value="">모든 과제</option>' + opt(apps, f.app) + '</select>' +
+        '<select id="fstu"><option value="">모든 학생</option>' + opt(stus, f.stu) + '</select>' +
+        (f.app || f.stu ? '<button class="btn-s" id="fclear">거르기 해제</button>' : '') +
+        '</div>' +
         '<p class="hint">날짜별로 묶여 있습니다. 카드를 눌러 크게 보고, 네모를 골라 선택 삭제하거나 그날 것을 한 번에 지울 수 있습니다.</p>' +
         (rows.length
           ? groupByDay(rows).map(function (g, gi) {
@@ -1069,7 +1162,12 @@ function panelSubs() {
                     '" data-path="' + esc(s.image_path || "") + '">삭제</button></div></div>';
                 }).join("") + '</div></div>';
             }).join("")
-          : '<div class="empty">아직 제출된 결과가 없습니다.</div>') + '</div><div id="modal"></div>';
+          : '<div class="empty">' + (all.length ? '고른 조건에 맞는 제출이 없습니다.' : '아직 제출된 결과가 없습니다.') +
+            '</div>') + '</div><div id="modal"></div>';
+
+      on("#fapp", "change", function () { ST.subFilter.app = $("#fapp").value; panelSubs(); });
+      on("#fstu", "change", function () { ST.subFilter.stu = $("#fstu").value; panelSubs(); });
+      on("#fclear", "click", function () { ST.subFilter = { app: "", stu: "" }; panelSubs(); });
 
       wireGroups(function (ids) {
         return sb.from("submissions").delete().in("id", ids);
@@ -1178,10 +1276,41 @@ function panelMembers() {
 
 /* ── 학생 명단 (교사용) ──────────────────────────────── */
 function panelStudents() {
-  sb.from("students").select("id,name,created_at,last_seen").eq("space_code", ST.space.code)
-    .order("name").then(function (r) {
+  Promise.all([
+    sb.from("students").select("id,name,created_at,last_seen").eq("space_code", ST.space.code).order("name"),
+    sb.from("apps").select("id,title,position").eq("space_code", ST.space.code),
+    sb.from("submissions").select("student_id,app_id").eq("space_code", ST.space.code).limit(3000)
+  ]).then(function (res) {
+      var r = res[0];
+      var apps = sortApps(res[1].data || []);
+      var subs = res[2].data || [];
       var rows = r.data || [];
-      $("#panel").innerHTML =
+      var seen = {};
+      subs.forEach(function (x) {
+        if (!x.student_id || !x.app_id) return;
+        var k = x.student_id + "|" + x.app_id;
+        seen[k] = (seen[k] || 0) + 1;
+      });
+      var matrix = "";
+      if (rows.length && apps.length) {
+        matrix =
+          '<div class="card"><h2>제출 현황</h2>' +
+          '<p class="hint">학생이 과제별로 결과를 보냈는지 보여 줍니다. 숫자는 보낸 횟수입니다.</p>' +
+          '<div class="mwrap"><table class="matrix"><thead><tr><th>학생</th>' +
+          apps.map(function (a) { return '<th>' + esc(a.title) + '</th>'; }).join("") +
+          '<th>합계</th></tr></thead><tbody>' +
+          rows.map(function (st) {
+            var done = 0;
+            var cells = apps.map(function (a) {
+              var c = seen[st.id + "|" + a.id] || 0;
+              if (c) done++;
+              return '<td class="' + (c ? "yes" : "no") + '">' + (c ? (c > 1 ? c : "✓") : "·") + '</td>';
+            }).join("");
+            return '<tr><th class="nm">' + esc(st.name) + '</th>' + cells +
+              '<td class="sum">' + done + '/' + apps.length + '</td></tr>';
+          }).join("") + '</tbody></table></div></div>';
+      }
+      $("#panel").innerHTML = matrix +
         '<div class="card"><h2>학생 명단 <span class="num">' + rows.length + '</span></h2>' +
         '<p class="hint">학생이 처음 들어올 때 정한 이름입니다. 비밀번호를 잊은 학생은 지워 주세요. ' +
         '지우면 그 이름으로 다시 등록할 수 있고, 이미 보낸 결과는 그대로 남습니다.</p>' +
