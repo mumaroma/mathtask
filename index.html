@@ -261,6 +261,17 @@
     text-align:center; font-size:11.5px; color:#5F5E5A; line-height:1.9; }
   .foot a { color:#993C1D; text-decoration:none; border-bottom:1px solid #DCCFB4; }
   .foot a:hover { border-bottom-color:#993C1D; }
+
+  .modetag { display:inline-block; font-size:10.5px; font-weight:700; color:#fff;
+    border-radius:20px; padding:2px 10px; margin-left:7px; vertical-align:2px; white-space:nowrap; }
+  .modetag.cls { background:#1B4965; }
+  .modetag.open { background:#B7410E; }
+  .item.m-class, .item.m-open { padding-left:12px; background:#FCFAF3; }
+  .item.m-class { border-left:6px solid #1B4965; }
+  .item.m-open { border-left:6px solid #B7410E; }
+  .card.m-class { border-left:6px solid #1B4965; border-radius:0 12px 12px 0; }
+  .card.m-open { border-left:6px solid #B7410E; border-radius:0 12px 12px 0; }
+  .card .modetag { margin-left:0; display:inline-block; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -552,17 +563,18 @@ function viewSpaces() {
     var oneGroup = !sfolders.length;
     var drawSpace = function (s) {
           var mine = s.owner === ST.user.id;
-          return '<div class="item">' +
+          var op = s.mode === "open";
+          return '<div class="item ' + (op ? "m-open" : "m-class") + '">' +
             '<span class="code-sm">' + esc(s.code) + '</span>' +
             '<div class="grow"><div class="t">' +
               '<button class="titlebtn open" data-code="' + esc(s.code) + '">' + esc(s.title) + '</button>' +
+              '<span class="modetag ' + (op ? "open" : "cls") + '">' + (op ? "공개용" : "수업용") + '</span>' +
               '<button class="iconbtn srn" data-code="' + esc(s.code) + '" data-t="' + esc(s.title) + '" ' +
                 'title="이름 수정" aria-label="이름 수정">' + ICON.pencil + '</button>' +
               (mine ? '<button class="iconbtn danger del" data-code="' + esc(s.code) + '" ' +
                 'title="삭제" aria-label="삭제">' + ICON.trash + '</button>' : '') +
             '</div>' +
-            '<div class="m">' + (s.mode === "open" ? '공개용 · ' : '수업용 · ') +
-              fmt(s.created_at) + ' 개설' + (mine ? '' : ' · 초대받음') + '</div></div>' +
+            '<div class="m">' + fmt(s.created_at) + ' 개설' + (mine ? '' : ' · 초대받음') + '</div></div>' +
             '<span class="menuwrap">' +
               '<button class="btn-s dots" data-m="s' + esc(s.code) + '" aria-label="더 보기">⋯</button>' +
               '<div class="menu" id="ms' + esc(s.code) + '" hidden>' +
@@ -753,7 +765,10 @@ function viewDash() {
     '<div class="between">' +
       '<button class="btn-s" id="back">← 내 공간 목록</button>' +
       '<span class="m">' + esc(ST.user.email) + '</span></div>' +
-    '<div class="card"><div class="titlerow"><h2>' + esc(sp.title) + '</h2>' +
+    '<div class="card ' + (sp.mode === "open" ? "m-open" : "m-class") + '">' +
+      '<span class="modetag ' + (sp.mode === "open" ? "open" : "cls") + '" style="margin-bottom:8px">' +
+      (sp.mode === "open" ? "공개용 · 기록을 남기지 않습니다" : "수업용 · 접속과 제출이 기록됩니다") + '</span>' +
+      '<div class="titlerow"><h2>' + esc(sp.title) + '</h2>' +
       '<button class="btn-d" id="renSpace">이름 수정</button></div>' +
       '<p class="hint">' + (sp.mode === "open"
         ? '공개용 공간입니다. 들어온 사람은 이름 없이 바로 과제를 실행하고, 기록은 남지 않습니다.'
