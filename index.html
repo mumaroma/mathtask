@@ -1649,6 +1649,75 @@ function panelMembers() {
     });
 }
 
+/* 붙여넣은 글에서 명단 뽑기 */
+function parseRosterText(text) {
+  var out = [];
+  String(text || "").split(/\r?\n/).forEach(function (line) {
+    var t = line.trim();
+    if (!t) return;
+    var parts = t.split(/[,\t;]/);
+    var nm = (parts[0] || "").trim();
+    var pin = (parts[1] || "").trim() || "1234";
+    if (!nm) return;
+    if (/^(이름|성명|학생|name)$/i.test(nm)) return;          /* 머리글 줄은 건너뜁니다 */
+    out.push({ name: nm, pin: pin });
+  });
+  return out;
+}
+
+/* 엑셀·CSV 파일에서 명단 뽑기 */
+function readRosterFile(file) {
+  if (/\.csv$/i.test(file.name) || file.type === "text/csv") {
+    return new Promise(function (res, rej) {
+      var r = new FileReader();
+      r.onload = function () { res(parseRosterText(String(r.result))); };
+      r.onerror = function () { rej(new Error("파일을 읽지 못했습니다.")); };
+      r.readAsText(file, "utf-8");
+    });
+  }
+  return new Promise(function (res, rej) {
+    var go = function () {
+      var r = new FileReader();
+      r.onload = function () {
+        try {
+          var wb = window.XLSX.read(new Uint8Array(r.result), { type: "array" });
+          var sh = wb.Sheets[wb.SheetNames[0]];
+          var rows = window.XLSX.utils.sheet_to_json(sh, { header: 1, blankrows: false });
+          var out = [];
+          rows.forEach(function (row) {
+            var nm = String(row[0] == null ? "" : row[0]).trim();
+            var pin = String(row[1] == null ? "" : row[1]).trim() || "1234";
+            if (!nm || /^(이름|성명|학생|name)$/i.test(nm)) return;
+            out.push({ name: nm, pin: pin });
+          });
+          res(out);
+        } catch (e) { rej(new Error("엑셀 파일을 읽지 못했습니다.")); }
+      };
+      r.onerror = function () { rej(new Error("파일을 읽지 못했습니다.")); };
+      r.readAsArrayBuffer(file);
+    };
+    if (window.XLSX) return go();
+    var sc = document.createElement("script");
+    sc.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+    sc.onload = go;
+    sc.onerror = function () { rej(new Error("엑셀 도구를 불러오지 못했습니다. CSV 로 저장해 올려 주세요.")); };
+    document.head.appendChild(sc);
+  });
+}
+
+/* 올린 명단 미리 보여 주기 */
+function showRosterPreview(rows) {
+  var box = $("#rpreview");
+  if (!box) return;
+  if (!rows.length) { box.innerHTML = '<div class="err">읽어 들인 이름이 없습니다. 첫 열에 이름이 있는지 확인해 주세요.</div>'; return; }
+  var bad = rows.filter(function (r) { return r.pin.length < 4; });
+  box.innerHTML =
+    '<div class="banner">' + rows.length + '명을 읽었습니다' +
+    (bad.length ? ' · 비밀번호가 짧은 ' + bad.length + '명은 등록되지 않습니다 (' +
+      bad.slice(0, 5).map(function (r) { return esc(r.name); }).join(", ") + (bad.length > 5 ? " 외" : "") + ')' : '') +
+    ' — 아래 칸에서 고친 뒤 등록하세요.</div>';
+}
+
 /* ── 학생 명단 (교사용) ──────────────────────────────── */
 function panelStudents() {
   Promise.all([
@@ -1697,9 +1766,15 @@ function panelStudents() {
             }).join("")
           : '<div class="empty">아직 등록한 학생이 없습니다.</div>') + '</div>' +
         '<div class="card"><h2>명단 미리 등록</h2>' +
-        '<p class="hint">한 줄에 한 명씩 <b>이름, 비밀번호</b> 로 적으세요. 비밀번호를 빼면 1234 로 넣습니다. ' +
-        '이미 있는 이름은 비밀번호만 새로 바뀝니다.</p>' +
-        '<textarea id="roster" style="min-height:150px" placeholder="김민서, 2401\n이준호, 2402\n박서윤"></textarea>' +
+        '<p class="hint">엑셀 파일을 올리거나, 한 줄에 한 명씩 <b>이름, 비밀번호</b> 로 붙여넣으세요. ' +
+        '비밀번호를 빼면 1234 로 넣고, 이미 있는 이름은 비밀번호만 새로 바뀝니다. ' +
+        '엑셀은 첫 열에 이름, 둘째 열에 비밀번호를 두면 됩니다.</p>' +
+        '<div class="row" style="margin-bottom:12px">' +
+          '<button class="btn-s" id="pickXls">엑셀·CSV 파일 고르기</button>' +
+          '<span class="m" id="xlsName"></span></div>' +
+        '<input type="file" id="xlsFile" accept=".xlsx,.xls,.csv,text/csv" style="display:none">' +
+        '<textarea id="roster" style="min-height:120px" placeholder="김민서, 2401\n이준호, 2402\n박서윤"></textarea>' +
+        '<div id="rpreview"></div>' +
         '<label class="dl" style="margin-bottom:12px"><input type="checkbox" id="rlock"' +
         (ST.space.roster_locked ? ' checked' : '') + '> 명단에 없는 이름은 들어오지 못하게 하기</label>' +
         '<div class="err" id="err"></div><div class="ok" id="rok"></div>' +
@@ -1713,30 +1788,43 @@ function panelStudents() {
         });
       });
 
+      on("#pickXls", "click", function () { $("#xlsFile").click(); });
+      on("#xlsFile", "change", function (e) {
+        var f = e.target.files[0]; e.target.value = "";
+        if (!f) return;
+        $("#xlsName").textContent = f.name;
+        readRosterFile(f).then(function (rows) {
+          $("#roster").value = rows.map(function (r) { return r.name + ", " + r.pin; }).join("\n");
+          showRosterPreview(rows);
+        }).catch(function (err) { setErr(err.message || "파일을 읽지 못했습니다."); });
+      });
+      on("#roster", "input", function () { $("#rpreview").innerHTML = ""; });
+
       on("#rgo", "click", function () {
-        var lines = $("#roster").value.split("\n").map(function (x) { return x.trim(); })
-          .filter(function (x) { return x; });
-        if (!lines.length) return setErr("명단을 붙여넣으세요.");
+        var rows = parseRosterText($("#roster").value);
+        if (!rows.length) return setErr("명단을 붙여넣거나 파일을 올리세요.");
         var btn = $("#rgo"); btn.disabled = true; btn.textContent = "등록 중…"; setErr("");
-        var bad = [], i = 0;
-        var step = function () {
-          if (i >= lines.length) {
-            btn.disabled = false; btn.textContent = "명단 등록";
-            if (bad.length) setErr("등록하지 못한 줄: " + bad.join(", "));
-            panelStudents();
+        $("#rok").textContent = "";
+
+        sb.rpc("student_preregister_bulk", { c: ST.space.code, items: rows }).then(function (rr) {
+          btn.disabled = false; btn.textContent = "명단 등록";
+          if (rr.error) {
+            setErr("등록하지 못했습니다: " + rr.error.message +
+              " — patch-roster.sql 을 Supabase 에서 실행했는지 확인해 주세요.");
             return;
           }
-          var parts = lines[i].split(/[,\t]/);
-          var nm = (parts[0] || "").trim();
-          var pin = (parts[1] || "1234").trim();
-          i++;
-          if (!nm || pin.length < 4) { bad.push(nm || "(빈 줄)"); return step(); }
-          sb.rpc("student_preregister", { c: ST.space.code, nm: nm, pin: pin }).then(function (rr) {
-            if (rr.error) bad.push(nm);
-            step();
-          });
-        };
-        step();
+          var res = rr.data || [];
+          var okN = res.filter(function (x) { return x.status === "OK"; }).length;
+          var bad = res.filter(function (x) { return x.status !== "OK"; });
+          var why = { EMPTY: "이름이 비어 있음", SHORTPIN: "비밀번호가 네 자리 미만" };
+          if (bad.length) {
+            setErr(bad.map(function (x) {
+              return x.name + " — " + (why[x.status] || x.status);
+            }).join(" / "));
+          }
+          $("#rok").textContent = okN + "명 등록했습니다." + (bad.length ? " (" + bad.length + "명 실패)" : "");
+          setTimeout(panelStudents, 900);
+        });
       });
 
       app.querySelectorAll(".stdel").forEach(function (b) {
