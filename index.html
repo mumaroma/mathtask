@@ -294,6 +294,17 @@
     box-shadow:2px 2px 0 #E8D9B0; }
   .libcard .menu { right:0; width:180px; }
   .face.file { background:#FAEEDA; color:#854F0B; }
+
+  .qrrow { display:flex; align-items:center; gap:14px; margin-top:14px; flex-wrap:wrap; }
+  .qrbox { width:96px; height:96px; flex:none; background:#fff; border:2px solid #2C2C2A;
+    border-radius:10px; padding:5px; cursor:pointer; box-shadow:3px 3px 0 #E8D9B0;
+    display:flex; align-items:center; justify-content:center; }
+  .qrbox:hover { box-shadow:4px 4px 0 #FAC775; }
+  .qrtext { font-size:12.5px; color:#5B5348; line-height:1.6; }
+  .qrtext b { display:block; font-size:13px; color:#2C2C2A; margin-bottom:2px; }
+  .qrbig { width:260px; height:260px; margin:4px auto 0; background:#fff; padding:8px;
+    border:2px solid #2C2C2A; border-radius:10px; }
+  @media print { body > .wrap > *:not(#app) { display:none; } }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -922,6 +933,78 @@ function viewLibrary() {
     });
 }
 
+/* QR 만들기 (처음 한 번만 도구를 받아 옵니다) */
+function loadQR() {
+  if (window.qrcode) return Promise.resolve(window.qrcode);
+  return new Promise(function (res, rej) {
+    var sc = document.createElement("script");
+    sc.src = "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js";
+    sc.onload = function () { res(window.qrcode); };
+    sc.onerror = function () { rej(new Error("QR 도구를 불러오지 못했습니다.")); };
+    document.head.appendChild(sc);
+  });
+}
+
+function makeQR(text) {
+  var q = window.qrcode(0, "M");
+  q.addData(text);
+  q.make();
+  return q;
+}
+
+function drawQR(sel, text, cell) {
+  var box = $(sel);
+  if (!box) return;
+  loadQR().then(function () {
+    box.innerHTML = makeQR(text).createSvgTag({ cellSize: cell || 4, margin: 2, scalable: true });
+    var svg = box.querySelector("svg");
+    if (svg) { svg.removeAttribute("width"); svg.removeAttribute("height"); svg.style.width = "100%"; svg.style.height = "100%"; }
+  }).catch(function () {
+    box.innerHTML = '<span class="m" style="padding:8px;text-align:center">QR 을 만들지 못했습니다</span>';
+  });
+}
+
+/* QR 크게 보기 · 이미지로 받기 */
+function bigQR(sp) {
+  var link = shareLink(sp.code);
+  var box = $("#qrmodal");
+  if (!box) { box = document.createElement("div"); box.id = "qrmodal"; app.appendChild(box); }
+  box.innerHTML =
+    '<div class="modal"><div class="mbox"><div class="pickbox" style="text-align:center">' +
+    '<h2 style="text-align:center">' + esc(sp.title) + '</h2>' +
+    '<div class="qrbig" id="qrbig"></div>' +
+    '<p style="font-family:var(--mono);font-size:22px;letter-spacing:5px;color:#1B4965;margin:12px 0 4px">' + esc(sp.code) + '</p>' +
+    '<p class="hint" style="text-align:center;overflow-wrap:anywhere">' + esc(link) + '</p>' +
+    '<div class="row" style="justify-content:center">' +
+    '<button class="btn-p" id="qrdl">이미지로 받기</button>' +
+    '<button class="btn-s" id="qrprint">인쇄</button>' +
+    '<button class="btn-s" id="qrclose">닫기</button></div></div></div></div>';
+  drawQR("#qrbig", link, 8);
+  on("#qrclose", "click", function () { box.innerHTML = ""; });
+  on("#qrprint", "click", function () { window.print(); });
+  on("#qrdl", "click", function () {
+    loadQR().then(function () {
+      var q = makeQR(link), n = q.getModuleCount(), m = 4, px = 12;
+      var c = document.createElement("canvas");
+      c.width = c.height = (n + m * 2) * px;
+      var g = c.getContext("2d");
+      g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+      g.fillStyle = "#1A1A1A";
+      for (var r = 0; r < n; r++) for (var k = 0; k < n; k++) {
+        if (q.isDark(r, k)) g.fillRect((k + m) * px, (r + m) * px, px, px);
+      }
+      g.fillStyle = "#1A1A1A";
+      g.font = "bold " + (px * 2.2) + "px monospace";
+      g.textAlign = "center";
+      g.fillText(sp.code, c.width / 2, c.height - px * 1.2);
+      var a = document.createElement("a");
+      a.href = c.toDataURL("image/png");
+      a.download = (sp.title || "space").replace(/[\\/:*?"<>|]/g, "") + "_QR.png";
+      a.click();
+    });
+  });
+}
+
 /* ── 교사: 공간 대시보드 ────────────────────────────────── */
 function openSpace(code) {
   var sp = ST.spaces.filter(function (s) { return s.code === code; })[0];
@@ -947,6 +1030,9 @@ function viewDash() {
       '<button class="btn-s" id="cpCode">코드 복사</button>' +
       '<button class="btn-s" id="cpLink">링크 복사</button>' +
       '<button class="btn-s" id="openLink">링크 열기</button></div>' +
+      '<div class="qrrow"><div class="qrbox" id="qrbox" title="QR 크게 보기"></div>' +
+        '<div class="qrtext"><b>휴대폰으로 바로 들어오기</b>' +
+        '<span>학생이 카메라로 비추면 이 공간이 열립니다. 눌러서 크게 보거나 이미지로 받으세요.</span></div></div>' +
       '<div class="linkbox">' + esc(shareLink(sp.code)) + '</div>' +
       '<p class="hint" style="margin:10px 0 0">링크가 길면 ' +
       '<a href="https://숏.한국" target="_blank" rel="noopener" style="color:var(--terra);font-weight:600">숏.한국</a>' +
@@ -966,6 +1052,8 @@ function viewDash() {
   on("#cpCode", "click", function (e) { copy(sp.code, e.target); });
   on("#cpLink", "click", function (e) { copy(shareLink(sp.code), e.target); });
   on("#openLink", "click", function () { window.open(shareLink(sp.code), "_blank"); });
+  drawQR("#qrbox", shareLink(sp.code), 3);
+  on("#qrbox", "click", function () { bigQR(sp); });
   on("#renSpace", "click", function () {
     var next = window.prompt("과제 공간 이름을 바꿉니다.", sp.title);
     if (next === null) return;
@@ -1649,6 +1737,47 @@ function panelMembers() {
     });
 }
 
+/* 엑셀 도구 받아 오기 */
+function ensureXLSX() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise(function (res, rej) {
+    var sc = document.createElement("script");
+    sc.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+    sc.onload = function () { res(window.XLSX); };
+    sc.onerror = function () { rej(new Error("엑셀 도구를 불러오지 못했습니다.")); };
+    document.head.appendChild(sc);
+  });
+}
+
+/* 명단 작성용 양식 내려받기 */
+function downloadRosterForm(btn) {
+  var old = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "만드는 중…"; }
+  var title = (ST.space && ST.space.title ? ST.space.title : "과제공간").replace(/[\\/:*?"<>|]/g, "");
+  var rows = [["이름", "비밀번호"], ["홍길동", "2401"], ["김영희", "2402"]];
+  for (var i = 0; i < 40; i++) rows.push(["", ""]);
+
+  var done = function () { if (btn) { btn.disabled = false; btn.textContent = old; } };
+  var save = function (href, name) {
+    var a = document.createElement("a");
+    a.href = href; a.download = name; a.click();
+    setTimeout(function () { if (href.indexOf("blob:") === 0) URL.revokeObjectURL(href); }, 1500);
+  };
+
+  ensureXLSX().then(function (XLSX) {
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 18 }, { wch: 14 }];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "학생명단");
+    XLSX.writeFile(wb, title + "_학생명단_양식.xlsx");
+    done();
+  }).catch(function () {
+    var csv = "\uFEFF" + rows.map(function (r) { return r.join(","); }).join("\n");
+    save(URL.createObjectURL(new Blob([csv], { type: "text/csv" })), title + "_학생명단_양식.csv");
+    done();
+  });
+}
+
 /* 붙여넣은 글에서 명단 뽑기 */
 function parseRosterText(text) {
   var out = [];
@@ -1696,12 +1825,9 @@ function readRosterFile(file) {
       r.onerror = function () { rej(new Error("파일을 읽지 못했습니다.")); };
       r.readAsArrayBuffer(file);
     };
-    if (window.XLSX) return go();
-    var sc = document.createElement("script");
-    sc.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
-    sc.onload = go;
-    sc.onerror = function () { rej(new Error("엑셀 도구를 불러오지 못했습니다. CSV 로 저장해 올려 주세요.")); };
-    document.head.appendChild(sc);
+    ensureXLSX().then(go).catch(function () {
+      rej(new Error("엑셀 도구를 불러오지 못했습니다. CSV 로 저장해 올려 주세요."));
+    });
   });
 }
 
@@ -1768,8 +1894,9 @@ function panelStudents() {
         '<div class="card"><h2>명단 미리 등록</h2>' +
         '<p class="hint">엑셀 파일을 올리거나, 한 줄에 한 명씩 <b>이름, 비밀번호</b> 로 붙여넣으세요. ' +
         '비밀번호를 빼면 1234 로 넣고, 이미 있는 이름은 비밀번호만 새로 바뀝니다. ' +
-        '엑셀은 첫 열에 이름, 둘째 열에 비밀번호를 두면 됩니다.</p>' +
+        '양식 받기로 엑셀 파일을 내려받아 채워 올리시면 가장 간편합니다. 예시 두 줄은 지우고 쓰세요.</p>' +
         '<div class="row" style="margin-bottom:12px">' +
+          '<button class="btn-s" id="dlForm">양식 받기</button>' +
           '<button class="btn-s" id="pickXls">엑셀·CSV 파일 고르기</button>' +
           '<span class="m" id="xlsName"></span></div>' +
         '<input type="file" id="xlsFile" accept=".xlsx,.xls,.csv,text/csv" style="display:none">' +
@@ -1788,6 +1915,7 @@ function panelStudents() {
         });
       });
 
+      on("#dlForm", "click", function (e) { downloadRosterForm(e.target); });
       on("#pickXls", "click", function () { $("#xlsFile").click(); });
       on("#xlsFile", "change", function (e) {
         var f = e.target.files[0]; e.target.value = "";
@@ -2044,9 +2172,12 @@ function studentOpen(id) {
             '<div class="row" style="margin-bottom:12px"><button class="btn-s" id="pickHtml">파일 고르기</button>' +
             '<span class="m" id="htmlName"></span></div>' +
             '<input type="file" id="htmlFile" style="display:none">' +
-            '<details style="margin-bottom:12px"><summary class="m" style="cursor:pointer">코드를 직접 붙여넣기</summary>' +
-            '<textarea id="htmlPaste" placeholder="<!DOCTYPE html> …" style="margin-top:8px"></textarea>' +
-            '<button class="btn-s" id="sendPaste">붙여넣은 코드 보내기</button></details></div>' +
+            '<button class="btn-s toggle" id="pasteToggle" style="width:100%;margin-bottom:12px">' +
+              'HTML 코드 붙여넣기<span id="pasteArrow">▼ 열기</span></button>' +
+            '<div id="pasteBox" style="display:none;margin-bottom:12px">' +
+              '<p class="hint">과제 화면에서 코드를 복사했거나 직접 쓴 코드가 있으면 여기에 붙여넣으세요.</p>' +
+              '<textarea id="htmlPaste" placeholder="<!DOCTYPE html> …"></textarea>' +
+              '<button class="btn-g" id="sendPaste">붙여넣은 코드 보내기</button></div></div>' +
           '<label>한마디 (선택)</label>' +
           '<input type="text" id="note" placeholder="예: 두 번째 문제가 헷갈렸어요">' +
           '<div class="err" id="err"></div><div class="ok" id="ok"></div></div></div>');
@@ -2090,6 +2221,12 @@ function wireHtmlSend(appRow) {
     }
     $("#htmlName").textContent = f.name;
     sendFile(f, appRow, btn);
+  });
+  on("#pasteToggle", "click", function () {
+    var box = $("#pasteBox"), open = box.style.display === "none";
+    box.style.display = open ? "block" : "none";
+    $("#pasteArrow").textContent = open ? "▲ 접기" : "▼ 열기";
+    if (open) $("#htmlPaste").focus();
   });
   on("#sendPaste", "click", function (e) {
     sendHtml($("#htmlPaste").value, null, appRow, e.target);
