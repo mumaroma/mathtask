@@ -272,6 +272,7 @@
   .card.m-class { border-left:6px solid #1B4965; border-radius:0 12px 12px 0; }
   .card.m-open { border-left:6px solid #B7410E; border-radius:0 12px 12px 0; }
   .card .modetag { margin-left:0; display:inline-block; }
+  .filters .btn-s.on { background:#9FE1CB; color:#04342C; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -598,7 +599,9 @@ function viewSpaces() {
     render(
       '<div class="between">' +
         '<button class="btn-s" id="out">← 로그아웃</button>' +
-        '<span class="m">' + esc(ST.user.email) + '</span></div>' +
+        '<span class="row" style="gap:8px;align-items:center">' +
+        '<button class="btn-s" id="lib">과제 보관함</button>' +
+        '<span class="m">' + esc(ST.user.email) + '</span></span></div>' +
       '<div class="card"><h2>내 과제 공간 <span class="num">' + ST.spaces.length + '</span></h2>' +
         '<p class="hint">공간마다 코드가 따로 있습니다. 학급이나 단원별로 나눠 쓰세요.</p>' + rows + '</div>' +
       '<div class="card"><h2>새 공간 만들기</h2>' +
@@ -614,6 +617,7 @@ function viewSpaces() {
         '<button class="btn-p" id="make">공간 만들기</button></div>' +
       '<div id="modal"></div>');
 
+    on("#lib", "click", viewLibrary);
     on("#out", "click", function () { sb.auth.signOut().then(function () { ST.user = null; viewHome(); }); });
     on("#make", "click", createSpace);
     app.querySelectorAll(".open").forEach(function (b) {
@@ -750,6 +754,111 @@ function createSpace() {
       });
   };
   attempt(0);
+}
+
+/* ── 과제 보관함: 내 공간의 모든 과제 한 자리에 ───────── */
+function viewLibrary() {
+  render('<div class="card"><div class="empty">과제를 모으는 중…</div></div>');
+  var codes = (ST.spaces || []).map(function (x) { return x.code; });
+  if (!codes.length) {
+    render('<div class="between"><button class="btn-s" id="back">← 내 공간 목록</button></div>' +
+      '<div class="card"><div class="empty">아직 공간이 없습니다.</div></div>');
+    on("#back", "click", viewSpaces);
+    return;
+  }
+  var names = {};
+  ST.spaces.forEach(function (x) { names[x.code] = x.title; });
+
+  sb.from("apps").select("id,title,space_code,lib_folder,created_at").in("space_code", codes)
+    .order("created_at", { ascending: false }).then(function (r) {
+      var all = r.data || [];
+      var by = ST.libBy || (ST.libBy = "space");
+      var lf = [];
+      all.forEach(function (a) {
+        var f = (a.lib_folder || "").trim();
+        if (f && lf.indexOf(f) < 0) lf.push(f);
+      });
+      lf.sort(function (a, b) { return a.localeCompare(b, "ko"); });
+
+      var groups = [];
+      if (by === "folder") {
+        var map = {}, plain = [];
+        all.forEach(function (a) {
+          var f = (a.lib_folder || "").trim();
+          if (!f) return plain.push(a);
+          if (!map[f]) { map[f] = { label: f, rows: [] }; groups.push(map[f]); }
+          map[f].rows.push(a);
+        });
+        groups.sort(function (a, b) { return a.label.localeCompare(b.label, "ko"); });
+        if (plain.length) groups.push({ label: "분류 없음", rows: plain });
+      } else {
+        var m2 = {};
+        all.forEach(function (a) {
+          if (!m2[a.space_code]) { m2[a.space_code] = { label: names[a.space_code] || a.space_code, rows: [] }; groups.push(m2[a.space_code]); }
+          m2[a.space_code].rows.push(a);
+        });
+      }
+
+      render(
+        '<div class="between"><button class="btn-s" id="back">← 내 공간 목록</button>' +
+          '<span class="m">' + esc(ST.user.email) + '</span></div>' +
+        '<div class="card"><h2>과제 보관함 <span class="num">' + all.length + '</span></h2>' +
+        '<p class="hint">내가 관리하는 모든 공간의 과제입니다. 여기서 바로 다른 공간에 넣을 수 있습니다.</p>' +
+        '<div class="filters">' +
+          '<button class="btn-s' + (by === "space" ? " on" : "") + '" id="bySpace">공간별로 보기</button>' +
+          '<button class="btn-s' + (by === "folder" ? " on" : "") + '" id="byFolder">분류별로 보기</button>' +
+        '</div>' +
+        (all.length
+          ? groups.map(function (g) {
+              return '<div class="fold"><span class="dl">' + esc(g.label) + '</span><b>' + g.rows.length + '개</b></div>' +
+                g.rows.map(function (a) {
+                  return '<div class="item"><div class="grow"><div class="t">' +
+                    '<button class="titlebtn prev" data-id="' + a.id + '">' + esc(a.title) + '</button></div>' +
+                    '<div class="m">' + (by === "folder"
+                      ? esc(names[a.space_code] || a.space_code)
+                      : (a.lib_folder ? '분류: ' + esc(a.lib_folder) : '분류 없음')) +
+                    ' · ' + fmt(a.created_at) + '</div></div>' +
+                    '<button class="btn-s cpto" data-id="' + a.id + '" data-t="' + esc(a.title) + '">공간에 넣기</button>' +
+                    '<button class="btn-s lfold" data-id="' + a.id + '" data-f="' + esc(a.lib_folder || "") + '">분류</button>' +
+                    '</div>';
+                }).join("");
+            }).join("")
+          : '<div class="empty">아직 올린 과제가 없습니다.</div>') +
+        '</div><div id="modal"></div>');
+
+      on("#back", "click", viewSpaces);
+      on("#bySpace", "click", function () { ST.libBy = "space"; viewLibrary(); });
+      on("#byFolder", "click", function () { ST.libBy = "folder"; viewLibrary(); });
+
+      app.querySelectorAll(".prev").forEach(function (b) {
+        b.addEventListener("click", function () { previewApp(b.dataset.id); });
+      });
+      app.querySelectorAll(".cpto").forEach(function (b) {
+        b.addEventListener("click", function () { copyToSpace(b.dataset.id, b.dataset.t); });
+      });
+      app.querySelectorAll(".lfold").forEach(function (b) {
+        b.addEventListener("click", function () {
+          $("#modal").innerHTML =
+            '<div class="modal"><div class="mbox"><div class="pickbox">' +
+            '<h2>보관함 분류</h2>' +
+            '<p class="hint">보관함에서만 쓰는 분류입니다. 공간 안의 폴더와는 따로 움직입니다.</p>' +
+            '<label>어느 분류에 둘까요</label>' + folderSelect("lfs", b.dataset.f || "", lf) +
+            '<input type="text" id="lfsnew" placeholder="새 분류 이름" style="display:none">' +
+            '<div class="row"><button class="btn-p" id="lfok">옮기기</button>' +
+            '<button class="btn-s" id="lfcancel">취소</button></div></div></div></div>';
+          wireFolderSelect("lfs", "lfsnew");
+          on("#lfcancel", "click", function () { $("#modal").innerHTML = ""; });
+          on("#lfok", "click", function () {
+            var next = readFolder("lfs", "lfsnew");
+            if (next === null) return alert("새 분류 이름을 입력하세요.");
+            sb.from("apps").update({ lib_folder: next || null }).eq("id", b.dataset.id).then(function (rr) {
+              if (rr.error) return alert("옮기지 못했습니다: " + rr.error.message);
+              viewLibrary();
+            });
+          });
+        });
+      });
+    });
 }
 
 /* ── 교사: 공간 대시보드 ────────────────────────────────── */
@@ -1083,7 +1192,8 @@ function showCode(id) {
 
 /* 다른 과제 공간으로 복사 */
 function copyToSpace(id, title) {
-  var others = (ST.spaces || []).filter(function (x) { return x.code !== ST.space.code; });
+  var cur = ST.space ? ST.space.code : "";
+  var others = (ST.spaces || []).filter(function (x) { return x.code !== cur; });
   if (!others.length) {
     alert("복사해 넣을 다른 공간이 없습니다. 먼저 공간을 하나 더 만들어 주세요.");
     return;
