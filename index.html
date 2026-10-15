@@ -553,13 +553,16 @@ function viewSpaces() {
               (mine ? '<button class="iconbtn danger del" data-code="' + esc(s.code) + '" ' +
                 'title="삭제" aria-label="삭제">' + ICON.trash + '</button>' : '') +
             '</div>' +
-            '<div class="m">' + fmt(s.created_at) + ' 개설' + (mine ? '' : ' · 초대받음') + '</div></div>' +
+            '<div class="m">' + (s.mode === "open" ? '공개용 · ' : '수업용 · ') +
+              fmt(s.created_at) + ' 개설' + (mine ? '' : ' · 초대받음') + '</div></div>' +
             '<span class="menuwrap">' +
               '<button class="btn-s dots" data-m="s' + esc(s.code) + '" aria-label="더 보기">⋯</button>' +
               '<div class="menu" id="ms' + esc(s.code) + '" hidden>' +
                 '<button class="mi open" data-code="' + esc(s.code) + '">' + ICON.play + '열기</button>' +
                 '<button class="mi link" data-code="' + esc(s.code) + '">' + ICON.copy + '링크 복사</button>' +
-                '<button class="mi sfold" data-code="' + esc(s.code) + '" data-f="' + esc(s.folder || "") + '">' + ICON.folder + '폴더 옮기기</button>' +
+                '<button class="mi smode" data-code="' + esc(s.code) + '" data-v="' + esc(s.mode || "class") + '">' + ICON.pencil +
+                (s.mode === "open" ? '수업용으로 바꾸기' : '공개용으로 바꾸기') + '</button>' +
+              '<button class="mi sfold" data-code="' + esc(s.code) + '" data-f="' + esc(s.folder || "") + '">' + ICON.folder + '폴더 옮기기</button>' +
               '<button class="mi sdup" data-code="' + esc(s.code) + '" data-t="' + esc(s.title) + '">' + ICON.copy + '복제</button>' +
               '</div></span></div>';
     };
@@ -582,6 +585,11 @@ function viewSpaces() {
         '<p class="hint">이름만 정하면 5자리 코드가 바로 생깁니다.</p>' +
         '<label>공간 이름</label>' +
         '<input type="text" id="title" placeholder="예: 2학년 3반 일차함수">' +
+        '<label>유형</label>' +
+        '<select id="smode">' +
+          '<option value="class">수업용 — 학생이 이름을 적고 들어오며 결과를 보냅니다</option>' +
+          '<option value="open">공개용 — 바로 실행만 하고 기록은 남기지 않습니다</option>' +
+        '</select>' +
         '<div class="err" id="err"></div>' +
         '<button class="btn-p" id="make">공간 만들기</button></div>' +
       '<div id="modal"></div>');
@@ -601,6 +609,19 @@ function viewSpaces() {
         next = next.trim();
         if (!next) return alert("이름은 비워 둘 수 없습니다.");
         sb.from("spaces").update({ title: next }).eq("code", b.dataset.code).then(function (r) {
+          if (r.error) return alert("바꾸지 못했습니다: " + r.error.message);
+          viewSpaces();
+        });
+      });
+    });
+    app.querySelectorAll(".smode").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var next = b.dataset.v === "open" ? "class" : "open";
+        var msg = next === "open"
+          ? "공개용으로 바꾸면 학생이 이름 없이 바로 들어와 실행만 합니다. 결과 보내기와 접속 기록이 멈춥니다. 이미 쌓인 기록은 그대로 남습니다."
+          : "수업용으로 바꾸면 학생이 이름과 비밀번호를 적고 들어오며 결과를 보낼 수 있습니다.";
+        if (!window.confirm(msg)) return;
+        sb.from("spaces").update({ mode: next }).eq("code", b.dataset.code).then(function (r) {
           if (r.error) return alert("바꾸지 못했습니다: " + r.error.message);
           viewSpaces();
         });
@@ -662,8 +683,10 @@ function duplicateSpace(code, title, btn) {
 
   var attempt = function (n) {
     var newCode = mkCode();
+    var src = (ST.spaces || []).filter(function (x) { return x.code === code; })[0] || {};
     sb.from("spaces").insert({
-      code: newCode, owner: ST.user.id, title: next,
+      code: newCode, owner: ST.user.id, title: next, mode: src.mode || "class",
+      folder: src.folder || null,
       teacher_name: ST.user.user_metadata && ST.user.user_metadata.full_name || ""
     }).then(function (r) {
       if (r.error) {
@@ -695,7 +718,8 @@ function createSpace() {
 
   var attempt = function (n) {
     var code = mkCode();
-    sb.from("spaces").insert({ code: code, owner: ST.user.id, title: title, teacher_name: name })
+    sb.from("spaces").insert({ code: code, owner: ST.user.id, title: title, teacher_name: name,
+      mode: ($("#smode") && $("#smode").value) || "class" })
       .then(function (r) {
         if (r.error) {
           if (r.error.code === "23505" && n < 5) return attempt(n + 1);
@@ -723,7 +747,9 @@ function viewDash() {
       '<span class="m">' + esc(ST.user.email) + '</span></div>' +
     '<div class="card"><div class="titlerow"><h2>' + esc(sp.title) + '</h2>' +
       '<button class="btn-d" id="renSpace">이름 수정</button></div>' +
-      '<p class="hint">코드를 알려 주거나 링크를 보내세요. 링크로 들어온 학생은 코드를 입력하지 않아도 됩니다.</p>' +
+      '<p class="hint">' + (sp.mode === "open"
+        ? '공개용 공간입니다. 들어온 사람은 이름 없이 바로 과제를 실행하고, 기록은 남지 않습니다.'
+        : '코드를 알려 주거나 링크를 보내세요. 링크로 들어온 학생은 코드를 입력하지 않아도 됩니다.') + '</p>' +
       '<div class="row"><span class="code-chip">' + esc(sp.code) + '</span>' +
       '<button class="btn-s" id="cpCode">코드 복사</button>' +
       '<button class="btn-s" id="cpLink">링크 복사</button>' +
@@ -734,9 +760,10 @@ function viewDash() {
       '에서 줄여 보내시면 칠판에 적기 좋습니다.</p></div>' +
     '<div class="tabs">' +
       '<button class="tab' + (ST.tab === "apps" ? " on" : "") + '" data-tab="apps">과제 앱</button>' +
-      '<button class="tab' + (ST.tab === "log" ? " on" : "") + '" data-tab="log">접속 기록</button>' +
-      '<button class="tab' + (ST.tab === "sub" ? " on" : "") + '" data-tab="sub">제출 결과</button>' +
-      '<button class="tab' + (ST.tab === "stu" ? " on" : "") + '" data-tab="stu">학생 명단</button>' +
+      (sp.mode === "open" ? '' :
+        '<button class="tab' + (ST.tab === "log" ? " on" : "") + '" data-tab="log">접속 기록</button>' +
+        '<button class="tab' + (ST.tab === "sub" ? " on" : "") + '" data-tab="sub">제출 결과</button>' +
+        '<button class="tab' + (ST.tab === "stu" ? " on" : "") + '" data-tab="stu">학생 명단</button>') +
       (sp.owner === ST.user.id
         ? '<button class="tab' + (ST.tab === "mem" ? " on" : "") + '" data-tab="mem">함께 관리</button>'
         : '') +
@@ -762,6 +789,7 @@ function viewDash() {
     b.addEventListener("click", function () { ST.tab = b.dataset.tab; viewDash(); });
   });
 
+  if (sp.mode === "open" && ST.tab !== "apps" && ST.tab !== "mem") ST.tab = "apps";
   if (ST.tab === "apps") panelApps();
   else if (ST.tab === "log") panelLog();
   else if (ST.tab === "mem") panelMembers();
@@ -1532,6 +1560,7 @@ function studentEnter(code) {
       return;
     }
     ST.space = r.data;
+    if (r.data.mode === "open") { ST.student = null; ST.studentId = null; studentApps(); return; }
     var saved = null;
     try { saved = localStorage.getItem("mt-stu-" + ST.space.code); } catch (e) { }
     if (saved) {
@@ -1595,10 +1624,12 @@ function studentApps() {
     ST.apps = sortApps(r.data || []);
     render(
       '<div class="between"><span class="m">' + esc(ST.space.title) + '</span>' +
-        '<span class="row" style="gap:8px;align-items:center">' +
-        '<span class="m">' + esc(ST.student) + '</span>' +
-        '<button class="btn-s" id="mine">내 제출 이력</button>' +
-        '<button class="btn-d" id="leave">나가기</button></span></div>' +
+        (ST.studentId
+          ? '<span class="row" style="gap:8px;align-items:center">' +
+            '<span class="m">' + esc(ST.student) + '</span>' +
+            '<button class="btn-s" id="mine">내 제출 이력</button>' +
+            '<button class="btn-d" id="leave">나가기</button></span>'
+          : '<span class="m">공개용</span>') + '</div>' +
       '<div class="card"><h2>과제 목록</h2><p class="hint">과제를 골라 여세요.</p>' +
       (ST.apps.length
         ? (function () {
@@ -1706,7 +1737,8 @@ function studentOpen(id) {
         return cur && cur.note ? '<div class="banner">' + esc(cur.note) + '</div>' : '';
       })() +
       '<div id="holder"></div>' +
-      '<div class="card" style="margin-top:14px">' +
+      (ST.studentId ? '' : '<!--noSend-->') +
+      '<div class="card" style="margin-top:14px"' + (ST.studentId ? '' : ' hidden') + '>' +
         '<button class="btn-g toggle" id="toggle">선생님께 결과 보내기<span id="arrow">▼ 열기</span></button>' +
         '<div id="send" style="display:none;margin-top:16px">' +
           '<p class="hint">완성한 화면을 캡처해서 올리세요. 휴대폰은 화면 캡처, 컴퓨터는 캡처 후 붙여넣기가 편합니다.</p>' +
@@ -1801,6 +1833,7 @@ function listenTaskSubmit(appRow) {
     var d = e.data;
     if (!d || d.type !== "mathtaskSubmit") return;
     var reply = function (r) { try { fr.contentWindow.postMessage({ type: "mathtaskSubmitResult", ok: r }, "*"); } catch (x) { } };
+    if (!ST.studentId) return reply(false);                     /* 공개용 공간은 제출을 받지 않습니다 */
     if (!confirm("과제 결과를 선생님께 보낼까요?")) return reply(false);
     var html = typeof d.html === "string" ? d.html : null;
     var payload = null;
