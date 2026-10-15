@@ -42,6 +42,9 @@
     border-radius: 0; padding: 15px 2px 7px; display: flex; justify-content: space-between;
     align-items: baseline; font-size: 13px; font-weight: 700; color: var(--blue); }
   .ftog b { font-weight: 400; font-size: 11.5px; color: var(--ink2); font-family: var(--mono); }
+  input[type=date] { width: 100%; font-family: var(--font); font-size: 16px; color: var(--ink);
+    background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
+    outline: none; margin-bottom: 12px; }
   input[type=text], textarea { width: 100%; font-family: var(--font); font-size: 16px; color: var(--ink);
     background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px 11px;
     outline: none; margin-bottom: 12px; }
@@ -206,7 +209,7 @@
   .btn-p:active, .btn-g:active { transform:translate(2px,2px); box-shadow:1px 1px 0 #2C2C2A; }
   .btn-s:active { transform:translate(1px,1px); box-shadow:1px 1px 0 #E8D9B0; }
   .ord .btn-d, .fold .btn-d { box-shadow:none; }
-  input[type=text], input[type=password], select { border:2px solid #2C2C2A; border-radius:10px; }
+  input[type=text], input[type=password], input[type=date], select { border:2px solid #2C2C2A; border-radius:10px; }
   textarea { border:1.5px solid #2C2C2A; border-radius:10px; }
   .item { border-bottom:1px solid #E3D6B8; }
   .thumb { border:1px solid #DCCFB4; box-shadow:none; }
@@ -305,6 +308,8 @@
   .qrbig { width:260px; height:260px; margin:4px auto 0; background:#fff; padding:8px;
     border:2px solid #2C2C2A; border-radius:10px; }
   @media print { body > .wrap > *:not(#app) { display:none; } }
+  .lockmark { display:inline-block; margin-left:7px; font-size:10.5px; color:#5F5E5A;
+    background:#F1EFE8; border:1px solid #DCCFB4; border-radius:5px; padding:1px 7px; vertical-align:2px; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -1008,8 +1013,14 @@ function bigQR(sp) {
 /* ── 교사: 공간 대시보드 ────────────────────────────────── */
 function openSpace(code) {
   var sp = ST.spaces.filter(function (s) { return s.code === code; })[0];
-  ST.space = sp; ST.tab = "apps";
-  viewDash();
+  ST.space = sp; ST.tab = "apps"; ST.myRole = null;
+  if (sp.owner === ST.user.id) { ST.myRole = "owner"; return viewDash(); }
+  render('<div class="card"><div class="empty">여는 중…</div></div>');
+  sb.from("space_members").select("role,expires_at").eq("space_code", code).then(function (r) {
+    var m = (r.data || [])[0];
+    ST.myRole = m && m.role === "viewer" ? "viewer" : "editor";
+    viewDash();
+  });
 }
 
 function viewDash() {
@@ -1021,8 +1032,9 @@ function viewDash() {
     '<div class="card ' + (sp.mode === "open" ? "m-open" : "m-class") + '">' +
       '<span class="modetag ' + (sp.mode === "open" ? "open" : "cls") + '" style="margin-bottom:8px">' +
       (sp.mode === "open" ? "공개용 · 기록을 남기지 않습니다" : "수업용 · 접속과 제출이 기록됩니다") + '</span>' +
+
       '<div class="titlerow"><h2>' + esc(sp.title) + '</h2>' +
-      '<button class="btn-d" id="renSpace">이름 수정</button></div>' +
+      (sp.owner === ST.user.id ? '<button class="btn-d" id="renSpace">이름 수정</button>' : '') + '</div>' +
       '<p class="hint">' + (sp.mode === "open"
         ? '공개용 공간입니다. 들어온 사람은 이름 없이 바로 과제를 실행하고, 기록은 남지 않습니다.'
         : '코드를 알려 주거나 링크를 보내세요. 링크로 들어온 학생은 코드를 입력하지 않아도 됩니다.') + '</p>' +
@@ -1039,7 +1051,7 @@ function viewDash() {
       '에서 줄여 보내시면 칠판에 적기 좋습니다.</p></div>' +
     '<div class="tabs">' +
       '<button class="tab' + (ST.tab === "apps" ? " on" : "") + '" data-tab="apps">과제 앱</button>' +
-      (sp.mode === "open" ? '' :
+      (sp.mode === "open" || isViewer() ? '' :
         '<button class="tab' + (ST.tab === "log" ? " on" : "") + '" data-tab="log">접속 기록</button>' +
         '<button class="tab' + (ST.tab === "sub" ? " on" : "") + '" data-tab="sub">제출 결과</button>' +
         '<button class="tab' + (ST.tab === "stu" ? " on" : "") + '" data-tab="stu">학생 명단</button>') +
@@ -1070,7 +1082,7 @@ function viewDash() {
     b.addEventListener("click", function () { ST.tab = b.dataset.tab; viewDash(); });
   });
 
-  if (sp.mode === "open" && ST.tab !== "apps" && ST.tab !== "mem") ST.tab = "apps";
+  if ((sp.mode === "open" || isViewer()) && ST.tab !== "apps" && ST.tab !== "mem") ST.tab = "apps";
   if (ST.tab === "apps") panelApps();
   else if (ST.tab === "log") panelLog();
   else if (ST.tab === "mem") panelMembers();
@@ -1126,37 +1138,49 @@ function wireMenus() {
   }
 }
 
+function isOwner() { return !!(ST.space && ST.user && ST.space.owner === ST.user.id); }
+function isViewer() { return ST.myRole === "viewer"; }
+function canEditApp(a) { return !isViewer() && (isOwner() || (a && a.created_by === ST.user.id)); }
+
 var GROUPS = [];
 function panelApps() {
-  sb.from("apps").select("id,title,created_at,folder,position,note").eq("space_code", ST.space.code)
+  sb.from("apps").select("id,title,created_at,folder,position,note,created_by").eq("space_code", ST.space.code)
     .order("created_at").then(function (r) {
       ST.apps = sortApps(r.data || []);
       var n = 0;
       var rows = ST.apps.length
         ? (GROUPS = groupByFolder(ST.apps)).map(function (g, gi) {
             return '<div class="fold"><span class="dl">' +
-              '<button class="mini fup" data-g="' + gi + '" title="폴더 위로">▲</button>' +
-              '<button class="mini fdn" data-g="' + gi + '" title="폴더 아래로">▼</button>' +
+              (isOwner()
+                ? '<button class="mini fup" data-g="' + gi + '" title="폴더 위로">▲</button>' +
+                  '<button class="mini fdn" data-g="' + gi + '" title="폴더 아래로">▼</button>'
+                : '') +
               esc(g.label) + '</span><b>' + g.rows.length + '개</b></div>' +
               g.rows.map(function (a, ai) {
                 n++;
                 return '<div class="item"><span class="num">' + String(n).padStart(2, "0") + '</span>' +
-                  '<span class="ord"><button class="mini aup" data-g="' + gi + '" data-a="' + ai + '" title="위로">▲</button>' +
-                  '<button class="mini adn" data-g="' + gi + '" data-a="' + ai + '" title="아래로">▼</button></span>' +
+                  (isOwner()
+                    ? '<span class="ord"><button class="mini aup" data-g="' + gi + '" data-a="' + ai + '" title="위로">▲</button>' +
+                      '<button class="mini adn" data-g="' + gi + '" data-a="' + ai + '" title="아래로">▼</button></span>'
+                    : '') +
                   '<div class="grow"><div class="t">' +
                     '<button class="titlebtn prev" data-id="' + a.id + '">' + esc(a.title) + '</button>' +
-                    '<button class="iconbtn ren" data-id="' + a.id + '" data-t="' + esc(a.title) + '" ' +
-                      'title="제목 수정" aria-label="제목 수정">' + ICON.pencil + '</button>' +
-                    '<button class="iconbtn danger del" data-id="' + a.id + '" ' +
-                      'title="삭제" aria-label="삭제">' + ICON.trash + '</button></div>' +
+                    (canEditApp(a)
+                      ? '<button class="iconbtn ren" data-id="' + a.id + '" data-t="' + esc(a.title) + '" ' +
+                          'title="제목 수정" aria-label="제목 수정">' + ICON.pencil + '</button>' +
+                        '<button class="iconbtn danger del" data-id="' + a.id + '" ' +
+                          'title="삭제" aria-label="삭제">' + ICON.trash + '</button>'
+                      : '<span class="lockmark" title="다른 선생님이 올린 과제입니다">읽기 전용</span>') + '</div>' +
                   (a.note ? '<div class="note">' + esc(a.note) + '</div>' : '') +
                   '<div class="m">' + fmt(a.created_at) + ' 등록</div></div>' +
                   '<span class="menuwrap">' +
                     '<button class="btn-s dots" data-m="' + a.id + '" aria-label="더 보기">⋯</button>' +
                     '<div class="menu" id="m' + a.id + '" hidden>' +
                       '<button class="mi prev" data-id="' + a.id + '">' + ICON.play + '미리보기</button>' +
-                      '<button class="mi anote" data-id="' + a.id + '" data-n="' + esc(a.note || "") + '">' + ICON.pencil + '안내문 쓰기</button>' +
-                      '<button class="mi move" data-id="' + a.id + '" data-f="' + esc(a.folder || "") + '">' + ICON.folder + '폴더 옮기기</button>' +
+                      (canEditApp(a)
+                        ? '<button class="mi anote" data-id="' + a.id + '" data-n="' + esc(a.note || "") + '">' + ICON.pencil + '안내문 쓰기</button>' +
+                          '<button class="mi move" data-id="' + a.id + '" data-f="' + esc(a.folder || "") + '">' + ICON.folder + '폴더 옮기기</button>'
+                        : '') +
                       '<button class="mi code" data-id="' + a.id + '">' + ICON.code + 'HTML 코드 보기</button>' +
                       '<button class="mi cpto" data-id="' + a.id + '" data-t="' + esc(a.title) + '">' + ICON.copy + '다른 공간으로 복사</button>' +
                     '</div></span></div>';
@@ -1172,7 +1196,7 @@ function panelApps() {
 
       $("#panel").innerHTML =
         '<div class="card"><h2>등록된 과제 <span class="num">' + ST.apps.length + '</span></h2>' + rows + '</div>' +
-        '<div class="card"><h2>과제 추가</h2>' +
+        (isViewer() ? '' : '<div class="card"><h2>과제 추가</h2>' +
           '<p class="hint">HTML 파일 하나로 된 활동을 그대로 올립니다. 코드를 붙여넣거나 .html 파일을 고르세요.</p>' +
           '<label>과제 제목</label><input type="text" id="atitle" placeholder="예: 활동 1 — 일차함수의 그래프">' +
           '<label>안내문 (선택 — 학생에게 함께 보입니다)</label>' +
@@ -1183,7 +1207,7 @@ function panelApps() {
           '<div class="row"><button class="btn-s" id="pickfile">.html 파일 고르기</button>' +
           '<button class="btn-p" id="addapp">과제 추가</button></div>' +
           '<input type="file" id="hfile" accept=".html,.htm,text/html" style="display:none">' +
-          '<div class="err" id="err" style="margin-top:10px"></div></div>' +
+          '<div class="err" id="err" style="margin-top:10px"></div></div>') +
         '<div id="modal"></div>';
 
       wireFolderSelect("afolder", "anewf");
@@ -1205,7 +1229,7 @@ function panelApps() {
         if (!html.trim()) return setErr("HTML 코드를 붙여넣거나 파일을 고르세요.");
         var btn = $("#addapp"); btn.disabled = true; setErr("");
         sb.from("apps").insert({ space_code: ST.space.code, title: title, html: html,
-          note: ($("#anote").value.trim() || null),
+          note: ($("#anote").value.trim() || null), created_by: ST.user.id,
           folder: folder || null, position: ST.apps.length })
           .then(function (r) {
             btn.disabled = false;
@@ -1405,13 +1429,13 @@ function panelLog() {
                 '<div class="dayhead"><label class="dl"><input type="checkbox" class="dchk">' +
                   esc(g.label) + '</label>' +
                 '<span class="dbtns"><b>' + g.rows.length + '명</b>' +
-                '<button class="btn-d dsel">선택 삭제</button>' +
-                '<button class="btn-d dall">전체 삭제</button></span></div>' +
+                (isOwner() ? '<button class="btn-d dsel">선택 삭제</button>' +
+                  '<button class="btn-d dall">전체 삭제</button>' : '') + '</span></div>' +
                 g.rows.map(function (v) {
                   return '<div class="item"><input type="checkbox" class="chk" data-id="' + v.id + '">' +
                     '<div class="grow"><div class="t">' + esc(v.student_name) + '</div></div>' +
                     '<div class="m">' + hm(v.created_at) + '</div>' +
-                    '<button class="btn-d vdel" data-id="' + v.id + '">삭제</button></div>';
+                    (isOwner() ? '<button class="btn-d vdel" data-id="' + v.id + '">삭제</button>' : '') + '</div>';
                 }).join("") + '</div>';
             }).join("")
           : '<div class="empty">아직 들어온 학생이 없습니다.</div>') + '</div>';
@@ -1476,6 +1500,7 @@ function wireGroups(deleteFn, reload) {
       });
     };
 
+    if (!grp.querySelector(".dsel")) return;
     grp.querySelector(".dsel").addEventListener("click", function (e) {
       run(e.target, Array.prototype.filter.call(boxes, function (c) { return c.checked; }), "선택 삭제");
     });
@@ -1584,8 +1609,8 @@ function panelSubs() {
                   esc(g.label) + '</label>' +
                 '<span class="dbtns"><b>' + g.rows.length + '건</b>' +
                 '<button class="btn-d ddl" data-g="' + gi + '">내려받기</button>' +
-                '<button class="btn-d dsel">선택 삭제</button>' +
-                '<button class="btn-d dall">전체 삭제</button></span></div>' +
+                (isOwner() ? '<button class="btn-d dsel">선택 삭제</button>' +
+                  '<button class="btn-d dall">전체 삭제</button>' : '') + '</span></div>' +
                 '<div class="grid" style="margin-top:10px">' + g.rows.map(function (s) {
                   var isImg = s.image_path && (!s.file_name || /\.(jpe?g|png|gif|webp|bmp|heic|svg)$/i.test(s.file_name));
                   var face = isImg
@@ -1603,8 +1628,8 @@ function panelSubs() {
                     '<i>' + esc(s.app_title || "") + '</i><i>' + hm(s.created_at) + '</i></div></div>' +
                     '<div class="foot"><label class="dl"><input type="checkbox" class="chk" data-id="' + s.id +
                     '" data-path="' + esc(s.image_path || "") + '">고르기</label>' +
-                    '<button class="btn-d sdel" data-id="' + s.id +
-                    '" data-path="' + esc(s.image_path || "") + '">삭제</button></div></div>';
+                    (isOwner() ? '<button class="btn-d sdel" data-id="' + s.id +
+                      '" data-path="' + esc(s.image_path || "") + '">삭제</button>' : '') + '</div></div>';
                 }).join("") + '</div></div>';
             }).join("")
           : '<div class="empty">' + (all.length ? '고른 조건에 맞는 제출이 없습니다.' : '아직 제출된 결과가 없습니다.') +
@@ -1689,24 +1714,30 @@ function openHtmlSub(id, label) {
 
 /* ── 함께 관리하는 교사 ───────────────────────────────── */
 function panelMembers() {
-  sb.from("space_members").select("id,email,created_at").eq("space_code", ST.space.code)
+  sb.from("space_members").select("id,email,created_at,role,expires_at").eq("space_code", ST.space.code)
     .order("created_at").then(function (r) {
       var rows = r.data || [];
       $("#panel").innerHTML =
         '<div class="card"><h2>함께 관리하는 선생님 <span class="num">' + rows.length + '</span></h2>' +
-        '<p class="hint">초대한 선생님은 이 공간의 과제를 올리고 고치며, 접속 기록과 제출 결과도 볼 수 있습니다. ' +
-        '공간 자체를 지우는 것은 만든 사람만 할 수 있습니다.</p>' +
+        '<p class="hint">초대한 선생님은 과제를 올리고 자기가 올린 과제를 고칠 수 있으며, 접속 기록과 제출 결과도 봅니다. ' +
+        '남이 올린 과제를 지우거나, 공간 이름과 유형을 바꾸거나, 학생 기록을 지우는 것은 만든 사람만 할 수 있습니다.</p>' +
         (rows.length
           ? rows.map(function (m) {
-              return '<div class="item"><div class="grow"><div class="t">' + esc(m.email) + '</div>' +
-                '<div class="m">' + fmt(m.created_at) + ' 초대</div></div>' +
+              var gone = m.expires_at && m.expires_at < new Date().toISOString().slice(0, 10);
+              return '<div class="item"><div class="grow"><div class="t">' + esc(m.email) +
+                (gone ? '<span class="lockmark">기간 지남</span>' : '') + '</div>' +
+                '<div class="m">' + fmt(m.created_at) + ' 초대' +
+                (m.expires_at ? ' · ' + esc(m.expires_at) + '까지' : ' · 기한 없음') + '</div></div>' +
                 '<button class="btn-d mdel" data-id="' + m.id + '">내보내기</button></div>';
             }).join("")
           : '<div class="empty">아직 초대한 선생님이 없습니다.</div>') + '</div>' +
         '<div class="card"><h2>선생님 초대</h2>' +
         '<p class="hint">상대 선생님이 구글 로그인에 쓰는 이메일을 적으세요. ' +
-        '그 주소로 로그인하면 자기 공간 목록에 이 공간이 함께 보입니다. 따로 메일이 가지는 않으니 직접 알려 주세요.</p>' +
+        '그 주소로 로그인하면 자기 공간 목록에 이 공간이 함께 보입니다. 따로 메일이 가지는 않으니 직접 알려 주세요. ' +
+        '한 공간에 20명까지 초대할 수 있습니다.</p>' +
         '<label>이메일</label><input type="text" id="memail" placeholder="teacher@school.kr">' +
+        '<label>언제까지 (비우면 기한 없음)</label>' +
+        '<input type="date" id="mexp">' +
         '<div class="err" id="err"></div>' +
         '<button class="btn-p" id="minvite">초대하기</button></div>';
 
@@ -1715,10 +1746,16 @@ function panelMembers() {
         if (!/.+@.+\..+/.test(email)) return setErr("이메일 형식을 확인하세요.");
         if (ST.user.email && email === ST.user.email.toLowerCase()) return setErr("본인은 이미 이 공간의 주인입니다.");
         var btn = $("#minvite"); btn.disabled = true; setErr("");
-        sb.from("space_members").insert({ space_code: ST.space.code, email: email }).then(function (r) {
+        sb.from("space_members").insert({
+          space_code: ST.space.code, email: email,
+          expires_at: $("#mexp").value || null
+        }).then(function (r) {
           btn.disabled = false;
           if (r.error) {
-            return setErr(r.error.code === "23505" ? "이미 초대한 선생님입니다." : "초대하지 못했습니다: " + r.error.message);
+            var m = r.error.message || "";
+            if (r.error.code === "23505") return setErr("이미 초대한 선생님입니다.");
+            if (m.indexOf("MEMBERCAP") >= 0) return setErr("한 공간에는 20명까지 초대할 수 있습니다.");
+            return setErr("초대하지 못했습니다: " + m);
           }
           panelMembers();
         });
