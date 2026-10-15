@@ -310,6 +310,16 @@
   @media print { body > .wrap > *:not(#app) { display:none; } }
   .lockmark { display:inline-block; margin-left:7px; font-size:10.5px; color:#5F5E5A;
     background:#F1EFE8; border:1px solid #DCCFB4; border-radius:5px; padding:1px 7px; vertical-align:2px; }
+
+  .item.dimmed { opacity:.55; }
+  .fb { padding:0 9px 6px; display:flex; flex-direction:column; gap:4px; }
+  .fb .btn-s { font-size:11px; padding:3px 8px; box-shadow:none; }
+  .fb.done .btn-s { background:#E1F5EE; border-color:#0F6E56; color:#0F6E56; }
+  .fbtext { font-size:11px; color:#5B5348; line-height:1.5; }
+
+  .helpbtn { padding:2px 10px; font-size:13px; line-height:1.6; border-radius:50%; }
+  .helpline { font-size:13px; color:#444441; line-height:1.75; margin-bottom:9px;
+    padding-left:12px; border-left:3px solid #FAC775; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -410,6 +420,18 @@ function groupByDay(rows) {
   });
   return out;
 }
+/* 비공개 버킷: 잠깐 열리는 주소를 만들어 씁니다 (2시간) */
+var SIGN = {};
+function signPaths(paths) {
+  var need = paths.filter(function (p) { return p && !SIGN[p]; });
+  if (!need.length) return Promise.resolve(SIGN);
+  return sb.storage.from("submissions").createSignedUrls(need, 7200).then(function (r) {
+    (r.data || []).forEach(function (x) { if (x && x.path && x.signedUrl) SIGN[x.path] = x.signedUrl; });
+    return SIGN;
+  }).catch(function () { return SIGN; });
+}
+function signed(p) { return SIGN[p] || ""; }
+
 function render(html) { app.innerHTML = html; window.scrollTo(0, 0); }
 function $(sel) { return app.querySelector(sel); }
 function on(sel, ev, fn) { var e = $(sel); if (e) e.addEventListener(ev, fn); }
@@ -425,7 +447,10 @@ var ICON = {
   play:   SV('<path d="M7 4v16l13-8z"/>'),
   folder: SV('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
   code:   SV('<path d="M9 8l-5 4 5 4M15 8l5 4-5 4"/>'),
-  copy:   SV('<path d="M9 9h10v10H9zM5 15V5h10"/>')
+  copy:   SV('<path d="M9 9h10v10H9zM5 15V5h10"/>'),
+  eye:    SV('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>'),
+  clock:  SV('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  check:  SV('<path d="M5 13l4 4L19 7"/>')
 };
 
 var ALPH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -637,7 +662,7 @@ function viewSpaces() {
       '<div class="between">' +
         '<button class="btn-s" id="out">← 로그아웃</button>' +
         '<span class="row" style="gap:8px;align-items:center">' +
-        '<button class="btn-s" id="lib">과제 보관함</button>' +
+        '<button class="btn-s" id="lib">과제 보관함</button>' + helpBtn("spaces") +
         '<span class="m">' + esc(ST.user.email) + '</span></span></div>' +
       '<div class="card"><h2>내 과제 공간 <span class="num">' + ST.spaces.length + '</span></h2>' +
         '<p class="hint">공간마다 코드가 따로 있습니다. 학급이나 단원별로 나눠 쓰세요.</p>' + rows + '</div>' +
@@ -655,6 +680,7 @@ function viewSpaces() {
       '<div id="modal"></div>');
 
     on("#lib", "click", viewLibrary);
+    wireHelp();
     on("#out", "click", function () { sb.auth.signOut().then(function () { ST.user = null; viewHome(); }); });
     on("#make", "click", createSpace);
     app.querySelectorAll(".open").forEach(function (b) {
@@ -866,7 +892,8 @@ function viewLibrary() {
 
       render(
         '<div class="between"><button class="btn-s" id="back">← 내 공간 목록</button>' +
-          '<span class="m">' + esc(ST.user.email) + '</span></div>' +
+          '<span class="row" style="gap:8px;align-items:center">' + helpBtn("lib") +
+          '<span class="m">' + esc(ST.user.email) + '</span></span></div>' +
         '<div class="card"><h2>과제 보관함 <span class="num">' + all.length + '</span></h2>' +
         '<p class="hint">내가 관리하는 모든 공간의 과제입니다. 여기서 바로 다른 공간에 넣을 수 있습니다.</p>' +
         '<div class="filters">' +
@@ -899,6 +926,7 @@ function viewLibrary() {
         '</div><div id="modal"></div>');
 
       on("#back", "click", viewSpaces);
+      wireHelp();
       on("#bySpace", "click", function () { ST.libBy = "space"; viewLibrary(); });
       on("#byFolder", "click", function () { ST.libBy = "folder"; viewLibrary(); });
 
@@ -1046,6 +1074,9 @@ function viewDash() {
         '<div class="qrtext"><b>휴대폰으로 바로 들어오기</b>' +
         '<span>학생이 카메라로 비추면 이 공간이 열립니다. 눌러서 크게 보거나 이미지로 받으세요.</span></div></div>' +
       '<div class="linkbox">' + esc(shareLink(sp.code)) + '</div>' +
+      (sp.mode === "open" || sp.owner !== ST.user.id ? '' :
+        '<label class="dl" style="margin-top:12px"><input type="checkbox" id="slock"' +
+        (sp.submit_locked ? ' checked' : '') + '> 지금은 제출 받지 않기 (수업이 끝난 뒤 잠가 두세요)</label>') +
       '<p class="hint" style="margin:10px 0 0">링크가 길면 ' +
       '<a href="https://숏.한국" target="_blank" rel="noopener" style="color:var(--terra);font-weight:600">숏.한국</a>' +
       '에서 줄여 보내시면 칠판에 적기 좋습니다.</p></div>' +
@@ -1058,12 +1089,21 @@ function viewDash() {
       (sp.owner === ST.user.id
         ? '<button class="tab' + (ST.tab === "mem" ? " on" : "") + '" data-tab="mem">함께 관리</button>'
         : '') +
+    helpBtn(ST.tab) +
     '</div><div id="panel"><div class="card"><div class="empty">불러오는 중…</div></div></div>');
 
   on("#back", "click", viewSpaces);
+  wireHelp();
   on("#cpCode", "click", function (e) { copy(sp.code, e.target); });
   on("#cpLink", "click", function (e) { copy(shareLink(sp.code), e.target); });
   on("#openLink", "click", function () { window.open(shareLink(sp.code), "_blank"); });
+  on("#slock", "change", function () {
+    var v = $("#slock").checked;
+    sb.from("spaces").update({ submit_locked: v }).eq("code", sp.code).then(function (r) {
+      if (r.error) { $("#slock").checked = !v; return alert("바꾸지 못했습니다: " + r.error.message); }
+      sp.submit_locked = v;
+    });
+  });
   drawQR("#qrbox", shareLink(sp.code), 3);
   on("#qrbox", "click", function () { bigQR(sp); });
   on("#renSpace", "click", function () {
@@ -1118,6 +1158,78 @@ function wireFolderSelect(selId, inputId) {
   });
 }
 
+/* 화면마다 다른 도움말 */
+var HELP = {
+  spaces: ["내 과제 공간", [
+    "공간은 학급이나 단원별로 여러 개 만들 수 있고, 폴더로 묶어 정리합니다.",
+    "수업용 공간은 학생이 이름으로 들어와 결과를 보내고 기록이 남습니다. 공개용 공간은 이름 없이 바로 실행만 하고 기록이 남지 않습니다.",
+    "공간 이름을 누르면 안으로 들어가고, 연필로 이름을 고치고 휴지통으로 지웁니다. ⋯ 안에는 열기·링크 복사·폴더 옮기기·복제가 있습니다.",
+    "복제는 과제를 그대로 옮겨 담은 새 공간을 만듭니다. 학생 기록은 따라가지 않습니다.",
+    "오른쪽 위 과제 보관함에서는 내 모든 공간의 과제를 한눈에 보고 원하는 공간에 바로 넣을 수 있습니다."
+  ]],
+  apps: ["과제 앱", [
+    "만드신 HTML을 붙여넣거나 파일로 올리면 과제가 됩니다. 안내문을 한 줄 달아 두면 학생 화면에 함께 보입니다.",
+    "제목을 누르면 미리보기, 옆의 연필은 제목 수정, 휴지통은 삭제입니다. 삭제는 두 번 눌러야 지워집니다.",
+    "⋯ 안에 숨기기·이전 버전·폴더 옮기기·코드 보기·다른 공간으로 복사가 있습니다.",
+    "숨긴 과제는 학생 목록에서 사라집니다. 준비 중인 과제를 감춰 뒀다가 수업 시작할 때 여세요.",
+    "과제를 고치면 바뀌기 전 모습이 7일 동안 보관되어 ⋯의 이전 버전에서 되돌릴 수 있습니다.",
+    "▲▼로 순서를 바꿉니다. 공간을 만든 사람만 순서를 조정할 수 있습니다."
+  ]],
+  log: ["접속 기록", [
+    "학생이 이름을 넣고 들어온 시각이 날짜별로 쌓입니다.",
+    "왼쪽 네모로 고른 뒤 선택 삭제하거나, 그날 것을 한 번에 지울 수 있습니다. 삭제는 두 번 눌러야 실행됩니다.",
+    "기록을 지우는 것은 공간을 만든 사람만 할 수 있습니다."
+  ]],
+  sub: ["제출 결과", [
+    "학생이 보낸 캡처·HTML·파일이 날짜별로 모입니다. 카드를 누르면 크게 보거나 실행해 볼 수 있습니다.",
+    "위쪽 선택 상자로 과제별·학생별로 걸러 볼 수 있습니다.",
+    "확인·피드백을 누르면 확인 표시가 남고 한마디를 적을 수 있습니다. 학생은 자기 제출 이력에서 그 피드백을 봅니다.",
+    "날짜 머리글의 내려받기는 그날 제출물을 zip으로 묶어 줍니다. 안에 이름·과제·시각이 담긴 목록표가 함께 들어갑니다."
+  ]],
+  stu: ["학생 명단", [
+    "맨 위 표는 학생별로 어떤 과제를 냈는지 보여 줍니다. 초록 체크는 제출, 점은 미제출입니다.",
+    "양식 받기로 엑셀 파일을 내려받아 이름과 비밀번호를 채워 올리면 한 번에 등록됩니다. 예시 두 줄은 지우고 쓰세요.",
+    "비밀번호는 네 자리 이상이어야 합니다. 학번이 짧으면 앞에 0을 붙여 맞춰 주세요.",
+    "명단에 없는 이름은 들어오지 못하게 잠글 수 있습니다. 명단을 다 넣은 뒤 켜세요.",
+    "비밀번호를 잊은 학생은 초기화를 눌러 주시면 그 이름으로 다시 등록합니다. 이미 낸 제출물은 그대로 남습니다."
+  ]],
+  mem: ["함께 관리", [
+    "상대 선생님이 구글 로그인에 쓰는 이메일로 초대합니다. 메일이 자동으로 가지는 않으니 직접 알려 주세요.",
+    "초대받은 선생님은 과제를 올리고 자기가 올린 과제를 고칠 수 있으며, 접속 기록과 제출 결과도 봅니다.",
+    "남이 올린 과제 삭제, 공간 이름·유형 변경, 공간 삭제, 학생 기록 삭제는 만든 사람만 할 수 있습니다.",
+    "만료일을 정해 두면 그날이 지나는 순간 그 선생님 목록에서 공간이 사라집니다. 한 공간에 20명까지 초대할 수 있습니다."
+  ]],
+  lib: ["과제 보관함", [
+    "내가 관리하는 모든 공간의 과제가 미리보기 카드로 모입니다. 공간별 또는 분류별로 볼 수 있습니다.",
+    "분류는 보관함에서만 쓰는 꼬리표입니다. 공간 안의 폴더와는 따로 움직입니다.",
+    "카드의 ⋯에서 공간에 넣기를 고르면 원하는 공간으로 복사됩니다. 원본은 그대로 남습니다."
+  ]]
+};
+
+function showHelp(key) {
+  var h = HELP[key];
+  if (!h) return;
+  var box = $("#helpmodal");
+  if (!box) { box = document.createElement("div"); box.id = "helpmodal"; app.appendChild(box); }
+  box.innerHTML =
+    '<div class="modal"><div class="mbox"><div class="pickbox">' +
+    '<h2>' + esc(h[0]) + ' 도움말</h2>' +
+    h[1].map(function (t) { return '<p class="helpline">' + esc(t) + '</p>'; }).join("") +
+    '<div class="row" style="margin-top:14px"><button class="btn-p" id="hclose">닫기</button></div>' +
+    '</div></div></div>';
+  on("#hclose", "click", function () { box.innerHTML = ""; });
+}
+
+function helpBtn(key) {
+  return '<button class="btn-s helpbtn" data-h="' + key + '" aria-label="도움말" title="도움말">?</button>';
+}
+
+function wireHelp() {
+  app.querySelectorAll(".helpbtn").forEach(function (b) {
+    b.addEventListener("click", function () { showHelp(b.dataset.h); });
+  });
+}
+
 /* ⋯ 메뉴 열고 닫기 */
 function wireMenus() {
   var closeAll = function () { app.querySelectorAll(".menu").forEach(function (m) { m.hidden = true; }); };
@@ -1144,7 +1256,7 @@ function canEditApp(a) { return !isViewer() && (isOwner() || (a && a.created_by 
 
 var GROUPS = [];
 function panelApps() {
-  sb.from("apps").select("id,title,created_at,folder,position,note,created_by").eq("space_code", ST.space.code)
+  sb.from("apps").select("id,title,created_at,folder,position,note,created_by,hidden").eq("space_code", ST.space.code)
     .order("created_at").then(function (r) {
       ST.apps = sortApps(r.data || []);
       var n = 0;
@@ -1158,7 +1270,7 @@ function panelApps() {
               esc(g.label) + '</span><b>' + g.rows.length + '개</b></div>' +
               g.rows.map(function (a, ai) {
                 n++;
-                return '<div class="item"><span class="num">' + String(n).padStart(2, "0") + '</span>' +
+                return '<div class="item' + (a.hidden ? " dimmed" : "") + '"><span class="num">' + String(n).padStart(2, "0") + '</span>' +
                   (isOwner()
                     ? '<span class="ord"><button class="mini aup" data-g="' + gi + '" data-a="' + ai + '" title="위로">▲</button>' +
                       '<button class="mini adn" data-g="' + gi + '" data-a="' + ai + '" title="아래로">▼</button></span>'
@@ -1170,13 +1282,20 @@ function panelApps() {
                           'title="제목 수정" aria-label="제목 수정">' + ICON.pencil + '</button>' +
                         '<button class="iconbtn danger del" data-id="' + a.id + '" ' +
                           'title="삭제" aria-label="삭제">' + ICON.trash + '</button>'
-                      : '<span class="lockmark" title="다른 선생님이 올린 과제입니다">읽기 전용</span>') + '</div>' +
+                      : '<span class="lockmark" title="다른 선생님이 올린 과제입니다">읽기 전용</span>') +
+                    (a.hidden ? '<span class="lockmark">숨김</span>' : '') + '</div>' +
                   (a.note ? '<div class="note">' + esc(a.note) + '</div>' : '') +
                   '<div class="m">' + fmt(a.created_at) + ' 등록</div></div>' +
                   '<span class="menuwrap">' +
                     '<button class="btn-s dots" data-m="' + a.id + '" aria-label="더 보기">⋯</button>' +
                     '<div class="menu" id="m' + a.id + '" hidden>' +
                       '<button class="mi prev" data-id="' + a.id + '">' + ICON.play + '미리보기</button>' +
+                      (canEditApp(a)
+                        ? '<button class="mi hide" data-id="' + a.id + '" data-h="' + (a.hidden ? "1" : "") + '">' +
+                            ICON.eye + (a.hidden ? '학생에게 보이기' : '학생에게 숨기기') + '</button>' +
+                          '<button class="mi vers" data-id="' + a.id + '" data-t="' + esc(a.title) + '">' +
+                            ICON.clock + '이전 버전' + '</button>'
+                        : '') +
                       (canEditApp(a)
                         ? '<button class="mi anote" data-id="' + a.id + '" data-n="' + esc(a.note || "") + '">' + ICON.pencil + '안내문 쓰기</button>' +
                           '<button class="mi move" data-id="' + a.id + '" data-f="' + esc(a.folder || "") + '">' + ICON.folder + '폴더 옮기기</button>'
@@ -1299,6 +1418,19 @@ function panelApps() {
 
       wireMenus();
 
+      app.querySelectorAll(".hide").forEach(function (b) {
+        b.addEventListener("click", function () {
+          sb.from("apps").update({ hidden: !b.dataset.h }).eq("id", b.dataset.id).then(function (r) {
+            if (r.error) return alert("바꾸지 못했습니다: " + r.error.message);
+            panelApps();
+          });
+        });
+      });
+
+      app.querySelectorAll(".vers").forEach(function (b) {
+        b.addEventListener("click", function () { showVersions(b.dataset.id, b.dataset.t); });
+      });
+
       app.querySelectorAll(".anote").forEach(function (b) {
         b.addEventListener("click", function () {
           var next = window.prompt("학생에게 함께 보일 안내문입니다. 비우면 지워집니다.", b.dataset.n || "");
@@ -1332,6 +1464,61 @@ function panelApps() {
             return;
           }
           sb.from("apps").delete().eq("id", b.dataset.id).then(panelApps);
+        });
+      });
+    });
+}
+
+/* 이전 버전 보기 · 되돌리기 (7일 보관) */
+function showVersions(id, title) {
+  sb.from("app_versions").select("id,title,saved_at").eq("app_id", id)
+    .order("saved_at", { ascending: false }).limit(30).then(function (r) {
+      var rows = r.data || [];
+      $("#modal").innerHTML =
+        '<div class="modal"><div class="mbox"><div class="pickbox">' +
+        '<h2>이전 버전 — ' + esc(title) + '</h2>' +
+        '<p class="hint">과제를 고칠 때마다 바뀌기 전 모습이 7일 동안 보관됩니다.</p>' +
+        (rows.length
+          ? rows.map(function (v) {
+              return '<div class="item"><div class="grow"><div class="t">' + esc(v.title || "(제목 없음)") + '</div>' +
+                '<div class="m">' + fmt(v.saved_at) + '</div></div>' +
+                '<button class="btn-s vprev" data-id="' + v.id + '">열어 보기</button>' +
+                '<button class="btn-d vback" data-id="' + v.id + '" data-a="' + id + '">되돌리기</button></div>';
+            }).join("")
+          : '<div class="empty">보관된 이전 버전이 없습니다.</div>') +
+        '<div class="row" style="margin-top:12px"><button class="btn-s" id="vclose">닫기</button></div>' +
+        '</div></div></div>';
+      on("#vclose", "click", function () { $("#modal").innerHTML = ""; });
+
+      app.querySelectorAll(".vprev").forEach(function (b) {
+        b.addEventListener("click", function () {
+          sb.from("app_versions").select("title,html").eq("id", b.dataset.id).single().then(function (rr) {
+            if (!rr.data) return;
+            $("#modal").innerHTML =
+              '<div class="modal"><div class="mbox"><p>' + esc(rr.data.title || "") + '</p>' +
+              '<div id="holder"></div><div style="margin-top:12px">' +
+              '<button class="btn-p" id="close">닫기</button></div></div></div>';
+            mountFrame("#holder", rr.data.html, rr.data.title);
+            on("#close", "click", function () { $("#modal").innerHTML = ""; });
+          });
+        });
+      });
+
+      app.querySelectorAll(".vback").forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (b.textContent === "되돌리기") { b.textContent = "정말 되돌리기"; return; }
+          b.disabled = true;
+          sb.from("app_versions").select("title,html").eq("id", b.dataset.id).single().then(function (rr) {
+            if (!rr.data) throw new Error("불러오지 못했습니다.");
+            return sb.from("apps").update({ title: rr.data.title, html: rr.data.html }).eq("id", b.dataset.a);
+          }).then(function (r3) {
+            if (r3 && r3.error) throw new Error(r3.error.message);
+            $("#modal").innerHTML = "";
+            panelApps();
+          }).catch(function (e) {
+            b.disabled = false; b.textContent = "되돌리기";
+            alert("되돌리지 못했습니다: " + (e.message || ""));
+          });
         });
       });
     });
@@ -1524,12 +1711,13 @@ function loadJSZip() {
 
 function downloadDay(label, rows, btn) {
   if (!rows.length) return alert("내려받을 것이 없습니다.");
+
   var old = btn.textContent;
   btn.disabled = true; btn.textContent = "준비 중…";
   var safe = function (t) { return String(t || "").replace(/[\\/:*?"<>|]/g, "").slice(0, 40); };
   var csv = "\uFEFF이름,과제,시각,한마디,파일\n";
 
-  loadJSZip().then(function (JSZip) {
+  signPaths(rows.map(function (r) { return r.image_path; })).then(loadJSZip).then(function (JSZip) {
     var zip = new JSZip(), jobs = [], used = {};
     rows.forEach(function (r, i) {
       var base = safe(r.student_name) + "_" + safe(r.app_title || "과제");
@@ -1539,7 +1727,7 @@ function downloadDay(label, rows, btn) {
       csv += '"' + (r.student_name || "") + '","' + (r.app_title || "") + '","' + fmt(r.created_at) +
              '","' + (r.note || "").replace(/"/g, "'") + '","' + nm + '"\n';
       if (r.image_path) {
-        var url = sb.storage.from("submissions").getPublicUrl(r.image_path).data.publicUrl;
+        var url = signed(r.image_path);
         var ext = (r.file_name && (r.file_name.match(/\.[A-Za-z0-9]+$/) || [])[0]) || ".jpg";
         jobs.push(fetch(url).then(function (res) { return res.blob(); })
           .then(function (b) { zip.file(nm + ext, b); })
@@ -1572,8 +1760,12 @@ function downloadDay(label, rows, btn) {
 }
 
 function panelSubs() {
-  sb.from("submissions").select("id,space_code,app_id,app_title,student_name,image_path,file_name,note,created_at,html_len,has_payload").eq("space_code", ST.space.code)
-    .order("created_at", { ascending: false }).limit(500).then(function (r) {
+  sb.from("submissions").select("id,space_code,app_id,app_title,student_name,image_path,file_name,note,created_at,html_len,has_payload,feedback,reviewed_at").eq("space_code", ST.space.code)
+    .order("created_at", { ascending: false }).limit(500)
+    .then(function (r) {
+      return signPaths((r.data || []).map(function (x) { return x.image_path; })).then(function () { return r; });
+    })
+    .then(function (r) {
       var all = r.data || [];
       var f = ST.subFilter || (ST.subFilter = { app: "", stu: "" });
       var apps = [], stus = [];
@@ -1592,7 +1784,7 @@ function panelSubs() {
           return '<option value="' + esc(v) + '"' + (v === cur ? " selected" : "") + '>' + esc(v) + '</option>';
         }).join("");
       };
-      var url = function (p) { return sb.storage.from("submissions").getPublicUrl(p).data.publicUrl; };
+      var url = signed;
       $("#panel").innerHTML =
         '<div class="card"><h2>제출 결과 <span class="num">' + rows.length +
         (rows.length !== all.length ? ' / ' + all.length : '') + '</span></h2>' +
@@ -1626,6 +1818,11 @@ function panelSubs() {
                     (s.note ? " · " + s.note : "")) + '">' + face +
                     '<div class="cap"><b>' + esc(s.student_name) + '</b>' +
                     '<i>' + esc(s.app_title || "") + '</i><i>' + hm(s.created_at) + '</i></div></div>' +
+                    '<div class="fb' + (s.reviewed_at ? ' done' : '') + '">' +
+                      '<button class="btn-s fbbtn" data-id="' + s.id + '" data-f="' + esc(s.feedback || "") +
+                      '" data-r="' + (s.reviewed_at ? "1" : "") + '" data-n="' + esc(s.student_name) + '">' +
+                      (s.reviewed_at ? '확인함' : '확인·피드백') + '</button>' +
+                      (s.feedback ? '<span class="fbtext">' + esc(s.feedback) + '</span>' : '') + '</div>' +
                     '<div class="foot"><label class="dl"><input type="checkbox" class="chk" data-id="' + s.id +
                     '" data-path="' + esc(s.image_path || "") + '">고르기</label>' +
                     (isOwner() ? '<button class="btn-d sdel" data-id="' + s.id +
@@ -1654,6 +1851,34 @@ function panelSubs() {
       wireGroups(function (ids) {
         return sb.from("submissions").delete().in("id", ids);
       }, panelSubs);
+
+      app.querySelectorAll(".fbbtn").forEach(function (b) {
+        b.addEventListener("click", function () {
+          $("#modal").innerHTML =
+            '<div class="modal"><div class="mbox"><div class="pickbox">' +
+            '<h2>' + esc(b.dataset.n) + ' 제출물</h2>' +
+            '<p class="hint">확인 표시를 남기고 한마디 적어 주면 학생이 자기 이력에서 봅니다.</p>' +
+            '<label>피드백 (비워도 됩니다)</label>' +
+            '<input type="text" id="fbtxt" placeholder="예: 그래프 설명이 좋았어요">' +
+            '<div class="row"><button class="btn-p" id="fbok">확인함으로 저장</button>' +
+            (b.dataset.r ? '<button class="btn-s" id="fbundo">확인 취소</button>' : '') +
+            '<button class="btn-s" id="fbcancel">닫기</button></div></div></div></div>';
+          $("#fbtxt").value = b.dataset.f || "";
+          on("#fbcancel", "click", function () { $("#modal").innerHTML = ""; });
+          var save = function (reviewed) {
+            sb.from("submissions").update({
+              feedback: $("#fbtxt").value.trim() || null,
+              reviewed_at: reviewed ? new Date().toISOString() : null
+            }).eq("id", b.dataset.id).then(function (r) {
+              if (r.error) return alert("저장하지 못했습니다: " + r.error.message);
+              $("#modal").innerHTML = "";
+              panelSubs();
+            });
+          };
+          on("#fbok", "click", function () { save(true); });
+          on("#fbundo", "click", function () { save(false); });
+        });
+      });
 
       app.querySelectorAll(".sdel").forEach(function (b) {
         b.addEventListener("click", function () {
@@ -2174,9 +2399,13 @@ function studentPin() {
 
 function studentHistory() {
   render('<div class="card"><div class="empty">내가 보낸 것을 찾는 중…</div></div>');
-  sb.rpc("student_history", { tok: ST.studentId }).then(function (r) {
+  sb.rpc("student_history", { tok: ST.studentId })
+    .then(function (r) {
+      return signPaths((r.data || []).map(function (x) { return x.image_path; })).then(function () { return r; });
+    })
+    .then(function (r) {
     var rows = r.data || [];
-    var url = function (p) { return sb.storage.from("submissions").getPublicUrl(p).data.publicUrl; };
+    var url = signed;
     render(
       '<div class="between"><button class="btn-s" id="back">← 과제 목록</button>' +
         '<span class="m">' + esc(ST.student) + '</span></div>' +
@@ -2188,8 +2417,10 @@ function studentHistory() {
               g.rows.map(function (h) {
                 var kind = h.image_path ? "사진" : h.html_len ? "HTML" : h.has_payload ? "기록" : "";
                 return '<div class="item"><span class="num">' + esc(kind) + '</span>' +
-                  '<div class="grow"><div class="t">' + esc(h.app_title || "과제") + '</div>' +
-                  (h.note ? '<div class="m">' + esc(h.note) + '</div>' : '') + '</div>' +
+                  '<div class="grow"><div class="t">' + esc(h.app_title || "과제") +
+                  (h.reviewed_at ? '<span class="modetag" style="background:#1D9E75">확인함</span>' : '') + '</div>' +
+                  (h.note ? '<div class="m">' + esc(h.note) + '</div>' : '') +
+                  (h.feedback ? '<div class="note">선생님: ' + esc(h.feedback) + '</div>' : '') + '</div>' +
                   '<div class="m">' + hm(h.created_at) + '</div>' +
                   '<button class="btn-s hopen" data-id="' + h.id + '" data-p="' + esc(h.image_path || "") + '">다시 보기</button></div>';
               }).join("");
@@ -2239,8 +2470,10 @@ function studentOpen(id) {
         return cur && cur.note ? '<div class="banner">' + esc(cur.note) + '</div>' : '';
       })() +
       '<div id="holder"></div>' +
-      (ST.studentId ? '' : '<!--noSend-->') +
-      '<div class="card" style="margin-top:14px"' + (ST.studentId ? '' : ' hidden') + '>' +
+      (ST.studentId && ST.space.submit_locked
+        ? '<div class="banner" style="margin-top:14px">지금은 제출을 받지 않는 기간입니다. 선생님께 문의하세요.</div>' : '') +
+      '<div class="card" style="margin-top:14px"' +
+        (ST.studentId && !ST.space.submit_locked ? '' : ' hidden') + '>' +
         '<button class="btn-g toggle" id="toggle">선생님께 결과 보내기<span id="arrow">▼ 열기</span></button>' +
         '<div id="send" style="display:none;margin-top:16px">' +
           '<p class="hint">완성한 화면을 캡처해서 올리세요. 휴대폰은 화면 캡처, 컴퓨터는 캡처 후 붙여넣기가 편합니다.</p>' +
