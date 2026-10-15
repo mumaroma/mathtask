@@ -1941,7 +1941,9 @@ function panelStudents() {
               " — patch-roster.sql 을 Supabase 에서 실행했는지 확인해 주세요.");
             return;
           }
-          var res = rr.data || [];
+          var res = (rr.data || []).map(function (x) {
+            return { name: x.out_name || x.name, status: x.out_status || x.status };
+          });
           var okN = res.filter(function (x) { return x.status === "OK"; }).length;
           var bad = res.filter(function (x) { return x.status !== "OK"; });
           var why = { EMPTY: "이름이 비어 있음", SHORTPIN: "비밀번호가 네 자리 미만" };
