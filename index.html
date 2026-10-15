@@ -293,6 +293,7 @@
   .libmenu .dots { padding:0 7px; font-size:14px; line-height:1.5; background:#fff;
     box-shadow:2px 2px 0 #E8D9B0; }
   .libcard .menu { right:0; width:180px; }
+  .face.file { background:#FAEEDA; color:#854F0B; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -1426,8 +1427,9 @@ function downloadDay(label, rows, btn) {
              '","' + (r.note || "").replace(/"/g, "'") + '","' + nm + '"\n';
       if (r.image_path) {
         var url = sb.storage.from("submissions").getPublicUrl(r.image_path).data.publicUrl;
+        var ext = (r.file_name && (r.file_name.match(/\.[A-Za-z0-9]+$/) || [])[0]) || ".jpg";
         jobs.push(fetch(url).then(function (res) { return res.blob(); })
-          .then(function (b) { zip.file(nm + ".jpg", b); })
+          .then(function (b) { zip.file(nm + ext, b); })
           .catch(function () { }));
       } else {
         jobs.push(sb.from("submissions").select("html,payload").eq("id", r.id).single()
@@ -1457,7 +1459,7 @@ function downloadDay(label, rows, btn) {
 }
 
 function panelSubs() {
-  sb.from("submissions").select("id,space_code,app_id,app_title,student_name,image_path,note,created_at,html_len,has_payload").eq("space_code", ST.space.code)
+  sb.from("submissions").select("id,space_code,app_id,app_title,student_name,image_path,file_name,note,created_at,html_len,has_payload").eq("space_code", ST.space.code)
     .order("created_at", { ascending: false }).limit(500).then(function (r) {
       var all = r.data || [];
       var f = ST.subFilter || (ST.subFilter = { app: "", stu: "" });
@@ -1497,12 +1499,16 @@ function panelSubs() {
                 '<button class="btn-d dsel">선택 삭제</button>' +
                 '<button class="btn-d dall">전체 삭제</button></span></div>' +
                 '<div class="grid" style="margin-top:10px">' + g.rows.map(function (s) {
-                  var face = s.image_path
+                  var isImg = s.image_path && (!s.file_name || /\.(jpe?g|png|gif|webp|bmp|heic|svg)$/i.test(s.file_name));
+                  var face = isImg
                     ? '<img loading="lazy" src="' + esc(url(s.image_path)) + '" alt="제출 캡처">'
+                    : s.image_path
+                      ? '<div class="face file">FILE<small>' + esc(s.file_name || "파일") + '</small></div>'
                     : s.html_len
                       ? '<div class="face">HTML<small>' + Math.max(1, Math.round(s.html_len / 1000)) + 'KB · 눌러서 실행</small></div>'
                       : '<div class="face data">DATA<small>눌러서 보기</small></div>';
-                  return '<div class="thumb"><div class="open" data-id="' + s.id + '" data-p="' + esc(s.image_path || "") + '" data-n="' +
+                  return '<div class="thumb"><div class="open" data-id="' + s.id + '" data-p="' + esc(s.image_path || "") +
+                    '" data-f="' + esc(s.file_name || "") + '" data-img="' + (isImg ? "1" : "") + '" data-n="' +
                     esc(s.student_name + " · " + (s.app_title || "") + " · " + fmt(s.created_at) +
                     (s.note ? " · " + s.note : "")) + '">' + face +
                     '<div class="cap"><b>' + esc(s.student_name) + '</b>' +
@@ -1552,9 +1558,15 @@ function panelSubs() {
       app.querySelectorAll(".thumb .open").forEach(function (b) {
         b.addEventListener("click", function () {
           if (!b.dataset.p) return openHtmlSub(b.dataset.id, b.dataset.n);
+          var link = url(b.dataset.p);
           $("#modal").innerHTML =
             '<div class="modal"><div class="mbox"><p>' + esc(b.dataset.n) + '</p>' +
-            '<img src="' + esc(url(b.dataset.p)) + '" alt="제출 캡처">' +
+            (b.dataset.img
+              ? '<img src="' + esc(link) + '" alt="제출 캡처">'
+              : '<div class="pickbox"><h2>' + esc(b.dataset.f || "파일") + '</h2>' +
+                '<p class="hint">그림이 아닌 파일입니다. 받아서 열어 보세요.</p>' +
+                '<a class="btn-p" style="display:inline-block;text-decoration:none" href="' + esc(link) +
+                '" download="' + esc(b.dataset.f || "submission") + '" target="_blank" rel="noopener">파일 받기</a></div>') +
             '<div style="margin-top:12px"><button class="btn-p" id="close">닫기</button></div></div></div>';
           on("#close", "click", function () { $("#modal").innerHTML = ""; });
         });
@@ -1938,11 +1950,12 @@ function studentOpen(id) {
           '<div class="drop" id="drop">캡처 이미지를 여기에 붙여넣기(Ctrl+V)하거나 끌어다 놓으세요' +
             '<div style="margin-top:12px"><button class="btn-s" id="pick">사진 고르기</button></div></div>' +
           '<input type="file" id="file" accept="image/*" style="display:none">' +
-          '<div class="sendsec"><h3>HTML 파일로 보내기</h3>' +
-            '<p class="hint">과제에서 내려받은 HTML 파일이나 직접 만든 HTML 을 보낼 수 있습니다. 선생님은 작동하는 화면 그대로 봅니다.</p>' +
-            '<div class="row" style="margin-bottom:12px"><button class="btn-s" id="pickHtml">HTML 파일 고르기</button>' +
+          '<div class="sendsec"><h3>HTML 코드 또는 파일로 보내기</h3>' +
+            '<p class="hint">과제에서 내려받은 HTML 파일, 직접 만든 HTML, 그 밖의 파일(PDF·문서·그림 등)을 보낼 수 있습니다. ' +
+            'HTML 은 선생님이 작동하는 화면 그대로 보고, 다른 파일은 받아서 엽니다.</p>' +
+            '<div class="row" style="margin-bottom:12px"><button class="btn-s" id="pickHtml">파일 고르기</button>' +
             '<span class="m" id="htmlName"></span></div>' +
-            '<input type="file" id="htmlFile" accept=".html,.htm,text/html" style="display:none">' +
+            '<input type="file" id="htmlFile" style="display:none">' +
             '<details style="margin-bottom:12px"><summary class="m" style="cursor:pointer">코드를 직접 붙여넣기</summary>' +
             '<textarea id="htmlPaste" placeholder="<!DOCTYPE html> …" style="margin-top:8px"></textarea>' +
             '<button class="btn-s" id="sendPaste">붙여넣은 코드 보내기</button></details></div>' +
@@ -1980,11 +1993,15 @@ function wireHtmlSend(appRow) {
   input.addEventListener("change", function () {
     var f = input.files[0]; input.value = "";
     if (!f) return;
-    if (!/\.html?$/i.test(f.name) && f.type !== "text/html") return setErr("HTML 파일(.html)만 보낼 수 있습니다.");
-    var r = new FileReader();
-    r.onload = function () { $("#htmlName").textContent = f.name; sendHtml(String(r.result), null, appRow, btn); };
-    r.onerror = function () { setErr("파일을 읽지 못했습니다."); };
-    r.readAsText(f, "utf-8");
+    if (/\.html?$/i.test(f.name) || f.type === "text/html") {
+      var r = new FileReader();
+      r.onload = function () { $("#htmlName").textContent = f.name; sendHtml(String(r.result), null, appRow, btn); };
+      r.onerror = function () { setErr("파일을 읽지 못했습니다."); };
+      r.readAsText(f, "utf-8");
+      return;
+    }
+    $("#htmlName").textContent = f.name;
+    sendFile(f, appRow, btn);
   });
   on("#sendPaste", "click", function (e) {
     sendHtml($("#htmlPaste").value, null, appRow, e.target);
@@ -2038,6 +2055,36 @@ function listenTaskSubmit(appRow) {
     sendHtml(html, payload, appRow, null).then(reply);
   };
   window.addEventListener("message", ST.msgFn);
+}
+
+/* 그림·문서 등 파일 그대로 보내기 */
+function sendFile(file, appRow, btn) {
+  var ok = $("#ok"), old = btn ? btn.textContent : "";
+  setErr(""); if (ok) ok.textContent = "";
+  if (file.size > 12 * 1024 * 1024) return setErr("파일이 너무 큽니다. 12MB 이하로 보내 주세요.");
+  if (btn) { btn.disabled = true; btn.textContent = "보내는 중…"; }
+  var ext = (file.name.match(/\.[A-Za-z0-9]+$/) || [""])[0];
+  var path = ST.space.code + "/" +
+    (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(36).slice(2)) + ext;
+
+  sb.storage.from("submissions").upload(path, file, { contentType: file.type || "application/octet-stream" })
+    .then(function (up) {
+      if (up.error) throw new Error(up.error.message);
+      return sb.from("submissions").insert({
+        space_code: ST.space.code, app_id: appRow.id, app_title: appRow.title,
+        student_name: ST.student, student_id: ST.studentId || null,
+        image_path: path, file_name: file.name,
+        note: ($("#note") && $("#note").value.trim()) || null
+      });
+    }).then(function (res) {
+      if (btn) { btn.disabled = false; btn.textContent = old; }
+      if (res && res.error) return setErr("보내지 못했습니다: " + res.error.message);
+      if (ok) ok.textContent = "선생님께 보냈습니다.";
+      if ($("#note")) $("#note").value = "";
+    }).catch(function (e) {
+      if (btn) { btn.disabled = false; btn.textContent = old; }
+      setErr(e.message || "보내지 못했습니다. 다시 시도하세요.");
+    });
 }
 
 function sendResult(file, appRow) {
