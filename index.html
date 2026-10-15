@@ -2051,6 +2051,7 @@ function studentApps() {
           ? '<span class="row" style="gap:8px;align-items:center">' +
             '<span class="m">' + esc(ST.student) + '</span>' +
             '<button class="btn-s" id="mine">내 제출 이력</button>' +
+            '<button class="btn-s" id="pinbtn">비밀번호 바꾸기</button>' +
             '<button class="btn-d" id="leave">나가기</button></span>'
           : '<span class="m">공개용</span>') + '</div>' +
       '<div class="card"><h2>과제 목록</h2><p class="hint">과제를 골라 여세요.</p>' +
@@ -2074,6 +2075,7 @@ function studentApps() {
           })()
         : '<div class="empty">아직 올라온 과제가 없습니다.</div>') + '</div>');
     on("#mine", "click", studentHistory);
+    on("#pinbtn", "click", studentPin);
     on("#leave", "click", function () {
       try { localStorage.removeItem("mt-stu-" + ST.space.code); } catch (e) { }
       ST.student = null; ST.studentId = null; studentGate();
@@ -2089,6 +2091,46 @@ function studentApps() {
     });
     app.querySelectorAll(".open").forEach(function (b) {
       b.addEventListener("click", function () { studentOpen(b.dataset.id); });
+    });
+  });
+}
+
+/* 학생: 내 비밀번호 바꾸기 */
+function studentPin() {
+  var box = $("#pinmodal");
+  if (!box) { box = document.createElement("div"); box.id = "pinmodal"; app.appendChild(box); }
+  box.innerHTML =
+    '<div class="modal"><div class="mbox"><div class="pickbox">' +
+    '<h2>비밀번호 바꾸기</h2>' +
+    '<p class="hint">선생님이 정해 준 처음 비밀번호를 내 것으로 바꿀 수 있습니다. 네 자리 이상으로 정하세요.</p>' +
+    '<label>지금 비밀번호</label>' +
+    '<input type="password" id="oldpin" inputmode="numeric" style="font-family:var(--mono);letter-spacing:6px">' +
+    '<label>새 비밀번호</label>' +
+    '<input type="password" id="newpin" inputmode="numeric" style="font-family:var(--mono);letter-spacing:6px">' +
+    '<label>새 비밀번호 다시</label>' +
+    '<input type="password" id="newpin2" inputmode="numeric" style="font-family:var(--mono);letter-spacing:6px">' +
+    '<div class="err" id="perr"></div><div class="ok" id="pok"></div>' +
+    '<div class="row"><button class="btn-p" id="pgo">바꾸기</button>' +
+    '<button class="btn-s" id="pcancel">취소</button></div></div></div></div>';
+
+  var perr = function (m) { $("#perr").textContent = m || ""; };
+  on("#pcancel", "click", function () { box.innerHTML = ""; });
+  on("#pgo", "click", function () {
+    var o = $("#oldpin").value.trim(), n = $("#newpin").value.trim(), n2 = $("#newpin2").value.trim();
+    if (!o) return perr("지금 비밀번호를 입력하세요.");
+    if (n.length < 4) return perr("새 비밀번호는 네 자리 이상입니다.");
+    if (n !== n2) return perr("새 비밀번호가 서로 다릅니다.");
+    var btn = $("#pgo"); btn.disabled = true; btn.textContent = "바꾸는 중…"; perr("");
+    sb.rpc("student_change_pin", { tok: ST.studentId, old_pin: o, new_pin: n }).then(function (r) {
+      btn.disabled = false; btn.textContent = "바꾸기";
+      if (r.error) {
+        var m = r.error.message || "";
+        if (m.indexOf("BADPIN") >= 0) return perr("지금 비밀번호가 맞지 않습니다.");
+        if (m.indexOf("SHORTPIN") >= 0) return perr("새 비밀번호는 네 자리 이상입니다.");
+        return perr("바꾸지 못했습니다: " + m);
+      }
+      $("#pok").textContent = "비밀번호를 바꿨습니다.";
+      setTimeout(function () { box.innerHTML = ""; }, 1200);
     });
   });
 }
