@@ -273,6 +273,26 @@
   .card.m-open { border-left:6px solid #B7410E; border-radius:0 12px 12px 0; }
   .card .modetag { margin-left:0; display:inline-block; }
   .filters .btn-s.on { background:#9FE1CB; color:#04342C; }
+
+  .libgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(165px,1fr));
+    gap:12px; margin:12px 0 4px; }
+  .libcard { position:relative; background:#fff; border:2px solid #2C2C2A; border-radius:10px;
+    overflow:visible; box-shadow:3px 3px 0 #E8D9B0; }
+  .libthumb { position:relative; height:112px; border-bottom:2px solid #2C2C2A; overflow:hidden;
+    background:#FCFAF3; border-radius:8px 8px 0 0; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; }
+  .libthumb .tph { font-size:30px; font-weight:700; color:#DCCFB4; }
+  .libthumb .tframe { position:absolute; top:0; left:0; width:660px; height:450px; border:0;
+    transform:scale(.33); transform-origin:0 0; pointer-events:none; background:#fff; }
+  .libcap { padding:8px 9px 9px; }
+  .libcap b { display:block; font-size:12.5px; font-weight:600; color:#2C2C2A; line-height:1.4;
+    cursor:pointer; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .libcap i { display:block; font-style:normal; font-family:var(--mono); font-size:10.5px;
+    color:#5B5348; margin-top:3px; }
+  .libmenu { position:absolute; top:6px; right:6px; z-index:5; }
+  .libmenu .dots { padding:0 7px; font-size:14px; line-height:1.5; background:#fff;
+    box-shadow:2px 2px 0 #E8D9B0; }
+  .libcard .menu { right:0; width:180px; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -756,6 +776,34 @@ function createSpace() {
   attempt(0);
 }
 
+/* 보관함 카드에 작은 미리보기 채우기 (보이는 것부터 하나씩) */
+function lazyThumbs() {
+  var boxes = Array.prototype.slice.call(app.querySelectorAll(".libthumb[data-lazy]"));
+  if (!boxes.length) return;
+  var fill = function (box) {
+    var id = box.dataset.lazy;
+    if (!id) return;
+    delete box.dataset.lazy;
+    sb.from("apps").select("html").eq("id", id).single().then(function (r) {
+      if (!r.data || !r.data.html) return;
+      var f = document.createElement("iframe");
+      f.setAttribute("sandbox", "allow-scripts");
+      f.setAttribute("scrolling", "no");
+      f.className = "tframe";
+      f.srcdoc = r.data.html;
+      box.innerHTML = "";
+      box.appendChild(f);
+    }).catch(function () { });
+  };
+  if (!window.IntersectionObserver) { boxes.slice(0, 12).forEach(fill); return; }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { fill(e.target); io.unobserve(e.target); }
+    });
+  }, { rootMargin: "200px" });
+  boxes.forEach(function (b) { io.observe(b); });
+}
+
 /* ── 과제 보관함: 내 공간의 모든 과제 한 자리에 ───────── */
 function viewLibrary() {
   render('<div class="card"><div class="empty">과제를 모으는 중…</div></div>');
@@ -811,17 +859,24 @@ function viewLibrary() {
         (all.length
           ? groups.map(function (g) {
               return '<div class="fold"><span class="dl">' + esc(g.label) + '</span><b>' + g.rows.length + '개</b></div>' +
-                g.rows.map(function (a) {
-                  return '<div class="item"><div class="grow"><div class="t">' +
-                    '<button class="titlebtn prev" data-id="' + a.id + '">' + esc(a.title) + '</button></div>' +
-                    '<div class="m">' + (by === "folder"
+                '<div class="libgrid">' + g.rows.map(function (a) {
+                  return '<div class="libcard">' +
+                    '<span class="menuwrap libmenu">' +
+                      '<button class="btn-s dots" data-m="l' + a.id + '" aria-label="더 보기">⋯</button>' +
+                      '<div class="menu" id="ml' + a.id + '" hidden>' +
+                        '<button class="mi prev" data-id="' + a.id + '">' + ICON.play + '크게 보기</button>' +
+                        '<button class="mi cpto" data-id="' + a.id + '" data-t="' + esc(a.title) + '">' + ICON.copy + '공간에 넣기</button>' +
+                        '<button class="mi lfold" data-id="' + a.id + '" data-f="' + esc(a.lib_folder || "") + '">' + ICON.folder + '분류 바꾸기</button>' +
+                        '<button class="mi code" data-id="' + a.id + '">' + ICON.code + 'HTML 코드 보기</button>' +
+                      '</div></span>' +
+                    '<div class="libthumb prev" data-id="' + a.id + '" data-lazy="' + a.id + '">' +
+                      '<span class="tph">' + esc(a.title.slice(0, 1)) + '</span></div>' +
+                    '<div class="libcap"><b class="prev" data-id="' + a.id + '">' + esc(a.title) + '</b>' +
+                    '<i>' + (by === "folder"
                       ? esc(names[a.space_code] || a.space_code)
-                      : (a.lib_folder ? '분류: ' + esc(a.lib_folder) : '분류 없음')) +
-                    ' · ' + fmt(a.created_at) + '</div></div>' +
-                    '<button class="btn-s cpto" data-id="' + a.id + '" data-t="' + esc(a.title) + '">공간에 넣기</button>' +
-                    '<button class="btn-s lfold" data-id="' + a.id + '" data-f="' + esc(a.lib_folder || "") + '">분류</button>' +
-                    '</div>';
-                }).join("");
+                      : (a.lib_folder ? esc(a.lib_folder) : "분류 없음")) + '</i>' +
+                    '<i>' + fmt(a.created_at) + '</i></div></div>';
+                }).join("") + '</div>';
             }).join("")
           : '<div class="empty">아직 올린 과제가 없습니다.</div>') +
         '</div><div id="modal"></div>');
@@ -830,12 +885,17 @@ function viewLibrary() {
       on("#bySpace", "click", function () { ST.libBy = "space"; viewLibrary(); });
       on("#byFolder", "click", function () { ST.libBy = "folder"; viewLibrary(); });
 
+      wireMenus();
       app.querySelectorAll(".prev").forEach(function (b) {
         b.addEventListener("click", function () { previewApp(b.dataset.id); });
       });
       app.querySelectorAll(".cpto").forEach(function (b) {
         b.addEventListener("click", function () { copyToSpace(b.dataset.id, b.dataset.t); });
       });
+      app.querySelectorAll(".code").forEach(function (b) {
+        b.addEventListener("click", function () { showCode(b.dataset.id); });
+      });
+      lazyThumbs();
       app.querySelectorAll(".lfold").forEach(function (b) {
         b.addEventListener("click", function () {
           $("#modal").innerHTML =
