@@ -10,7 +10,7 @@
    ============================================================ */
 
 var LIVE = { ch: null, code: null, role: null, sid: null, name: null, appId: null, appTitle: null, lastSent: 0, timer: null,
-  students: {}, html: {}, spot: null, teacherDrive: false, msgFn: null, hideName: false, cols: 4 };
+  students: {}, html: {}, wins: {}, msgFn: null, hideName: false, cols: 4, appFilter: "" };
 
 /* TV 모드 켜기/끄기 — 켜면 화면 오른쪽 위에 '되돌아오기' 버튼이 고정되고, Esc 로도 끕니다 */
 function liveTV(on) {
@@ -28,6 +28,13 @@ function liveTV(on) {
     if (LIVE.escFn) { document.removeEventListener("keydown", LIVE.escFn); LIVE.escFn = null; }
     var t = document.getElementById("liveTV"); if (t) t.textContent = "TV 모드";
   }
+}
+function liveRenderAppOptions() {
+  var sel = $("#liveApp"); if (!sel) return;
+  var apps = {}; Object.keys(LIVE.students).forEach(function (k) { var s = LIVE.students[k]; if (s.app) apps[s.app] = s.title || ("과제 " + s.app); });
+  var cur = sel.value, html = '<option value="">모든 과제</option>';
+  Object.keys(apps).forEach(function (id) { html += '<option value="' + esc(id) + '">' + esc(apps[id]) + '</option>'; });
+  if (sel.innerHTML !== html) { sel.innerHTML = html; sel.value = (apps[cur] ? cur : ""); LIVE.appFilter = sel.value; }
 }
 function liveApplyCols() { var g = $("#livegrid"); if (g) g.style.gridTemplateColumns = "repeat(" + (LIVE.cols || 4) + ", minmax(0, 1fr))"; setTimeout(liveScaleThumbs, 50); }
 /* 카드 안 iframe(1000×750 고정)을 카드 너비에 맞춰 축소 */
@@ -51,7 +58,7 @@ function liveOpen(code, presenceKey) {
 function liveClose() {
   if (document.body.classList.contains("tvmode")) liveTV(false);
   if (LIVE.ch) { try { sb.removeChannel(LIVE.ch); } catch (e) { } }
-  LIVE.ch = null; LIVE.code = null; LIVE.students = {}; LIVE.spot = null; 
+  LIVE.ch = null; LIVE.code = null; LIVE.students = {}; liveCloseWindows(); 
   if (LIVE.msgFn) { window.removeEventListener("message", LIVE.msgFn); LIVE.msgFn = null; }
   if (LIVE.timer) { clearTimeout(LIVE.timer); LIVE.timer = null; }
 }
@@ -76,7 +83,6 @@ function liveStudentStart(appRow) {
   LIVE.msgFn = function (e) {
     var fr = frame(); if (!fr || e.source !== fr.contentWindow) return;
     var d = e.data; if (!d || d.type !== "sim:state") return;
-    if (!LIVE.viewingTeacher) LIVE.myState = d.state;          /* 선생님 화면을 보는 동안은 내 작업으로 기록하지 않음 */
     pendingState = { sid: LIVE.sid, name: LIVE.name, app: LIVE.appId, title: LIVE.appTitle, state: d.state, mode: d.mode || "", t: Date.now() };
     var wait = Math.max(0, 250 - (Date.now() - LIVE.lastSent));
     if (!LIVE.timer) LIVE.timer = setTimeout(flush, wait);
@@ -86,16 +92,6 @@ function liveStudentStart(appRow) {
   ch.on("broadcast", { event: "control" }, function (m) {
     var p = m.payload || {}; if (p.sid !== LIVE.sid && p.sid !== "*") return;
     var fr = frame(); if (!fr) return;
-    if (p.action === "apply" && p.state) {
-      if (p.app && String(p.app) !== String(LIVE.appId)) return;   /* 다른 과제의 화면이면 무시 */
-      LIVE.viewingTeacher = true;
-      try { fr.contentWindow.postMessage({ type: "sim:apply", state: p.state }, "*"); } catch (e) { }
-      liveBanner("선생님이 보낸 화면을 보고 있습니다.", "내 작업으로 돌아가기", function () {
-        LIVE.viewingTeacher = false;
-        if (LIVE.myState) { try { fr.contentWindow.postMessage({ type: "sim:apply", state: LIVE.myState }, "*"); } catch (e) { } }
-        liveBanner("");
-      });
-    }
     if (p.action === "spotlight") liveBanner(p.on ? "내 화면이 TV에 공유되고 있습니다" : "");
     if (p.action === "ping") { try { fr.contentWindow.postMessage({ type: "sim:request" }, "*"); } catch (e) { } }
   });
@@ -116,19 +112,20 @@ function liveBanner(text, btnText, onBtn) {
 function panelLive() {
   var sp = ST.space;
   $("#panel").innerHTML =
-    '<div class="card"><div class="between" style="margin-bottom:8px"><h2 style="margin:0">실시간 모니터 <span class="modetag" style="background:#B7410E">Beta</span></h2>' +
+    '<div class="card"><div class="between livehead" style="margin-bottom:8px"><h2 style="margin:0">실시간 모니터 <span class="modetag" style="background:#B7410E">Beta</span></h2>' +
       '<span class="row" style="gap:8px;align-items:center"><span class="m" id="livecount">접속 0명</span>' +
+      '<select id="liveApp" title="과제별로 보기"><option value="">모든 과제</option></select>' +
       '<label class="dl" style="font-size:12px;margin:0"><input type="checkbox" id="liveHideName"> 이름 숨기기</label>' +
       '<select id="liveCols" title="한 줄에 몇 개"><option value="3">3개씩</option><option value="4" selected>4개씩</option><option value="5">5개씩</option><option value="6">6개씩</option></select>' +
       '<button class="btn-s" id="liveTV">TV 모드</button></span></div>' +
-    '<p class="hint">학생이 과제를 열고 조작하면 그 상태가 아래 카드에 그대로 다시 그려집니다. 카드를 누르면 크게 보고, 크게 보기 화면에서 직접 조작해 그 학생에게 보낼 수 있습니다. ' +
+    '<p class="hint">학생이 과제를 열고 조작하면 그 상태가 아래 카드에 그대로 다시 그려집니다. 카드를 누르면 <b>새 창</b>에 그 학생의 작업 화면이 크게 열리고 계속 따라 바뀝니다(TV에 끌어다 놓기 좋습니다). ' +
       '과제 HTML 에 <code>sim:state</code> / <code>sim:apply</code> 규약이 들어 있어야 합니다.</p>' +
     '<div class="livesum" id="livesum"></div>' +
-    '<div class="livespot" id="livespot" hidden></div>' +
     '<div class="livegrid" id="livegrid"><div class="empty">학생이 과제를 열면 여기에 나타납니다.</div></div></div>';
   on("#liveTV", "click", function () { liveTV(!document.body.classList.contains("tvmode")); });
   on("#liveHideName", "change", function () { LIVE.hideName = $("#liveHideName").checked; liveRenderGrid(); });
   on("#liveCols", "change", function () { LIVE.cols = +$("#liveCols").value; liveApplyCols(); });
+  on("#liveApp", "change", function () { LIVE.appFilter = $("#liveApp").value; liveRenderGrid(); liveRenderSummary(); });
   $("#liveHideName").checked = !!LIVE.hideName; $("#liveCols").value = String(LIVE.cols || 4); liveApplyCols();
 
   LIVE.role = "teacher";
@@ -149,7 +146,7 @@ function panelLive() {
     var p = m.payload || {}; if (!p.sid) return;
     var s = LIVE.students[p.sid] = LIVE.students[p.sid] || { sid: p.sid, online: true };
     s.name = p.name || s.name; s.app = p.app; s.title = p.title; s.state = p.state; s.mode = p.mode; s.t = p.t || Date.now();
-    liveEnsureHtml(s.app, function () { liveApplyCard(s); if (LIVE.spot === s.sid) liveApplySpot(s); liveRenderSummary(); });
+    liveEnsureHtml(s.app, function () { liveApplyCard(s); liveApplyWindow(s); liveRenderSummary(); });
   });
   ch.subscribe(function (s) { if (s === "SUBSCRIBED") ch.track({ teacher: true }); });
 
@@ -168,22 +165,27 @@ function liveEnsureHtml(appId, done) {
 
 function liveRenderGrid() {
   var grid = $("#livegrid"); if (!grid) return;
-  var list = Object.keys(LIVE.students).map(function (k) { return LIVE.students[k]; })
+  liveRenderAppOptions();
+  var all = Object.keys(LIVE.students).map(function (k) { return LIVE.students[k]; });
+  var list = all.filter(function (s) { return !LIVE.appFilter || String(s.app) === String(LIVE.appFilter); })
     .sort(function (a, b) { return (b.online - a.online) || String(a.name).localeCompare(String(b.name), "ko"); });
-  if (!list.length) { grid.innerHTML = '<div class="empty">학생이 과제를 열면 여기에 나타납니다.</div>'; return; }
+  /* 걸러진 카드는 숨김 */
+  grid.querySelectorAll(".livecard").forEach(function (c) { var sid = c.dataset.sid; c.style.display = list.some(function (s) { return s.sid === sid; }) ? "" : "none"; });
+  if (!list.length) { if (!grid.querySelector(".empty")) { var e0 = document.createElement("div"); e0.className = "empty"; e0.textContent = LIVE.appFilter ? "이 과제를 열어 둔 학생이 없습니다." : "학생이 과제를 열면 여기에 나타납니다."; grid.appendChild(e0); } return; }
+  var e1 = grid.querySelector(".empty"); if (e1) e1.remove();
   list.forEach(function (s) {
     var card = grid.querySelector('[data-sid="' + CSS.escape(s.sid) + '"]');
     if (!card) {
       var e = grid.querySelector(".empty"); if (e) e.remove();
       card = document.createElement("div"); card.className = "livecard"; card.dataset.sid = s.sid;
       card.innerHTML = '<div class="lhead"><b class="lname"></b><span class="lmode m"></span></div><div class="lframe"></div>';
-      card.addEventListener("click", function () { liveSpot(s.sid); });
+      card.addEventListener("click", function () { liveOpenWindow(s.sid); });
       grid.appendChild(card);
     }
     card.classList.toggle("off", !s.online);
-    card.classList.toggle("spot", LIVE.spot === s.sid);
+    card.classList.toggle("spot", !!(LIVE.wins[s.sid] && !LIVE.wins[s.sid].closed));
     card.querySelector(".lname").textContent = LIVE.hideName ? ("학생 " + (list.indexOf(s) + 1)) : (s.name || "학생");
-    card.querySelector(".lmode").textContent = (s.mode || (s.online ? "접속" : "나감"));
+    card.querySelector(".lmode").textContent = (s.mode || (s.online ? "접속" : "나감")) + (LIVE.appFilter ? "" : (s.title ? " · " + s.title : ""));
   });
 }
 
@@ -206,46 +208,43 @@ function liveApplyCard(s) {
 
 function liveRenderSummary() {
   var box = $("#livesum"); if (!box) return;
-  var cnt = {}; Object.keys(LIVE.students).forEach(function (k) { var s = LIVE.students[k]; if (!s.online) return; var m = (s.mode || "접속").split("(")[0].trim(); cnt[m] = (cnt[m] || 0) + 1; });
+  var cnt = {}; Object.keys(LIVE.students).forEach(function (k) { var s = LIVE.students[k]; if (!s.online) return; if (LIVE.appFilter && String(s.app) !== String(LIVE.appFilter)) return; var m = (s.mode || "접속").split("(")[0].trim(); cnt[m] = (cnt[m] || 0) + 1; });
   var keys = Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a]; });
   box.innerHTML = keys.length ? keys.map(function (k) { return '<span class="chip"><b>' + cnt[k] + '</b> ' + esc(k) + '</span>'; }).join("") : "";
 }
 
-/* 크게 보기 */
-function liveSpot(sid) {
+/* 학생 카드 클릭 → 새 창에 그 학생의 작업 화면 (계속 따라 바뀜, 보기 전용) */
+function liveOpenWindow(sid) {
   var s = LIVE.students[sid]; if (!s) return;
-  if (LIVE.spot && LIVE.spot !== sid) liveControl(LIVE.spot, { action: "spotlight", on: false });
-  LIVE.spot = sid;
-  var box = $("#livespot"); box.hidden = false;
-  box.innerHTML =
-    '<div class="between" style="margin-bottom:6px"><b>' + esc(LIVE.hideName ? "학생" : (s.name || "학생")) + ' <span class="m">' + esc(s.title || "") + '</span></b>' +
-    '<span class="row" style="gap:6px">' +
-      '<button class="btn-s" id="spAll">이 화면을 전체에게 보여 주기</button>' +
-      '<button class="btn-s" id="spClose">닫기</button></span></div>' +
-    '<div class="spframe"></div>' +
-    '<p class="hint" style="margin-top:6px">여기서는 보기만 합니다. "전체에게 보여 주기"를 누르면 같은 과제를 열어 둔 모든 학생의 화면이 이 상태로 바뀌고, 학생은 "내 작업으로 돌아가기"로 자기 작업을 되찾습니다.</p>';
-  on("#spClose", "click", function () { liveControl(sid, { action: "spotlight", on: false }); LIVE.spot = null; box.hidden = true; box.innerHTML = ""; liveRenderGrid(); });
-  on("#spAll", "click", function (e) {
-    var cur = LIVE.students[LIVE.spot]; if (!cur || !cur.state) return;
-    if (!window.confirm("같은 과제를 열어 둔 모든 학생의 화면이 이 상태로 바뀝니다. 학생은 '내 작업으로 돌아가기'로 되돌릴 수 있습니다. 보낼까요?")) return;
-    liveControl("*", { action: "apply", state: cur.state, app: cur.app }); copyFlash(e.target, "전체에게 보냈습니다");
-  });
+  var w = LIVE.wins[sid];
+  if (w && !w.closed) { w.focus(); return; }
+  w = window.open("", "live-" + sid, "width=1000,height=760");
+  if (!w) { alert("팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요."); return; }
+  LIVE.wins[sid] = w;
+  var title = (LIVE.hideName ? "학생" : (s.name || "학생")) + " — " + (s.title || "과제");
+  w.document.open();
+  w.document.write('<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>' + esc(title) + '</title>' +
+    '<style>html,body{margin:0;height:100%;background:#fff;font-family:sans-serif}' +
+    '.bar{height:36px;display:flex;align-items:center;gap:10px;padding:0 12px;background:#1B4965;color:#fff;font-size:14px}' +
+    '.bar b{font-weight:700}.bar span{opacity:.8;font-size:12px}iframe{border:0;width:100%;height:calc(100% - 36px);display:block;pointer-events:none}</style></head>' +
+    '<body><div class="bar"><b>' + esc(title) + '</b><span>실시간 · 보기 전용</span></div><iframe sandbox="allow-scripts"></iframe></body></html>');
+  w.document.close();
+  var fr = w.document.querySelector("iframe");
+  fr.dataset.app = String(s.app);
+  fr.addEventListener("load", function () { fr.dataset.ready = "1"; if (s.state) fr.contentWindow.postMessage({ type: "sim:apply", state: s.state }, "*"); });
+  fr.srcdoc = LIVE.html[s.app] || "";
   liveControl(sid, { action: "spotlight", on: true });
-  liveEnsureHtml(s.app, function () { liveApplySpot(s, true); });
+  var poll = setInterval(function () { if (w.closed) { clearInterval(poll); liveControl(sid, { action: "spotlight", on: false }); liveRenderGrid(); } }, 1000);
   liveRenderGrid();
 }
-function liveApplySpot(s, rebuild) {
-  var box = app.querySelector("#livespot .spframe"); if (!box) return;
-  var fr = box.querySelector("iframe");
-  if (rebuild || !fr || fr.dataset.app !== String(s.app)) {
-    box.innerHTML = ""; fr = document.createElement("iframe"); fr.dataset.app = String(s.app); fr.className = "frame";
-    fr.setAttribute("sandbox", "allow-scripts"); fr.style.pointerEvents = "none";
-    fr.srcdoc = LIVE.html[s.app] || "";
-    fr.addEventListener("load", function () { fr.dataset.ready = "1"; if (s.state) fr.contentWindow.postMessage({ type: "sim:apply", state: s.state }, "*"); });
-    box.appendChild(fr); return;
-  }
+function liveApplyWindow(s) {
+  var w = LIVE.wins[s.sid]; if (!w || w.closed) return;
+  var fr; try { fr = w.document.querySelector("iframe"); } catch (e) { return; }
+  if (!fr) return;
+  if (fr.dataset.app !== String(s.app)) { fr.dataset.app = String(s.app); fr.dataset.ready = ""; fr.srcdoc = LIVE.html[s.app] || ""; return; }
   if (fr.dataset.ready && s.state) fr.contentWindow.postMessage({ type: "sim:apply", state: s.state }, "*");
 }
+function liveCloseWindows() { Object.keys(LIVE.wins).forEach(function (k) { try { if (!LIVE.wins[k].closed) LIVE.wins[k].close(); } catch (e) { } }); LIVE.wins = {}; }
 function liveControl(sid, payload) {
   if (!LIVE.ch) return;
   payload.sid = sid;
