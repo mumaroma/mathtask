@@ -32,6 +32,10 @@ var LIVE_PROMPT = [
   "  if (d && d.type === 'sim:apply' && d.state) { try { window.setState(d.state); } catch (err) {} }",
   "});",
   "",
+  "5. 초기화(init)가 setTimeout 등으로 늦게 끝나면, 그 전에 받은 상태는 보관했다가 init 직후 setState 로 적용하세요(교사 창에서 처음 열 때 상태가 지워지지 않게).",
+  "",
+  "화면 배치: 과제(그림·조작 영역)가 화면의 대부분을 차지하고, 제목은 한 줄 얇은 막대로, 기능 설명은 <details class=\"help\"><summary>설명</summary>…</details> 처럼 작게 접힌 토글로 두세요. 조작 버튼·입력은 항상 보이게 하고 글 설명만 접습니다.",
+  "",
   "주의: 외부 라이브러리 없이 한 파일(HTML+CSS+JS)로 만들고, 배경은 흰색, 마우스와 터치 모두 지원하세요. 상태를 받았을 때(setState) 다시 notify() 를 부르지 않아도 됩니다."
 ].join("\n");
 
@@ -187,6 +191,28 @@ function panelLive() {
 
 }
 
+/* 실시간 수업용 안내문 — 공간 만들기/유형 바꾸기 화면에서 씀 */
+function liveNoticeHtml() {
+  return '<div class="livenotice" id="liveNotice">' +
+    '<b>실시간 수업용은 과제 HTML 이 실시간 규약을 지원해야 합니다.</b>' +
+    '<p>학생 화면을 교사가 실시간으로 보려면 과제 앱 안에 <code>getState()</code> / <code>setState()</code> 와 ' +
+    '<code>sim:state</code> / <code>sim:apply</code> 메시지 규약이 들어 있어야 합니다. 규약이 없는 과제도 올릴 수는 있지만 접속 여부만 보이고 화면은 재현되지 않습니다.</p>' +
+    '<p><b>과제에 규약을 넣는 방법</b></p><ol>' +
+    '<li>아래 <b>안내문 복사</b>를 누릅니다(또는 텍스트 파일로 받습니다).</li>' +
+    '<li>Claude·ChatGPT 등 AI 대화창에 과제 HTML 파일을 올리고, 복사한 안내문을 붙여 넣어 보냅니다. 새 과제를 만들 때는 과제 설명과 함께 붙여 넣으면 됩니다.</li>' +
+    '<li>받은 HTML 을 이 공간의 과제로 올립니다. 별도 프로그램이나 스킬 설치는 필요 없습니다.</li></ol>' +
+    '<div class="row"><button type="button" class="btn-s" id="liveNoticeCopy">안내문 복사</button>' +
+    '<button type="button" class="btn-s" id="liveNoticeDl">텍스트 파일로 받기</button></div>' +
+    '<p class="m">같은 안내문은 공간을 연 뒤 \'실시간\' 탭 위쪽 \'실시간 규약\' 상자에서도 볼 수 있습니다.</p></div>';
+}
+function liveWireNotice() {
+  var c = document.getElementById("liveNoticeCopy"), d = document.getElementById("liveNoticeDl");
+  if (c) c.addEventListener("click", function (e) { e.preventDefault(); copy(LIVE_PROMPT, c); });
+  if (d) d.addEventListener("click", function (e) { e.preventDefault(); liveDownloadPrompt(); });
+}
+function liveDownloadPrompt() {
+  var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([LIVE_PROMPT], { type: "text/plain;charset=utf-8" })); a.download = "실시간수업_규약_안내문.txt"; a.click();
+}
 /* iframe 이 막 로드됐을 때는 과제 스크립트의 초기화가 아직 끝나지 않았을 수 있어, 상태를 몇 번에 나눠 보냅니다 */
 function liveApplyRetry(fr, getState) {
   [0, 300, 900, 2000].forEach(function (ms) {
