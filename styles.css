@@ -348,3 +348,6 @@ body.tvmode .livegrid { gap: 10px; }
 .livehead select, .livehead .btn-s { width: auto; display: inline-block; margin: 0; padding: 5px 8px; font-size: 13px; }
 .livehead .row { flex-wrap: wrap; }
 body.tvmode .livehead { display: flex !important; }
+.liveproto { border: 1px dashed #D0C8B8; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; background: #FFFDF7; }
+.liveproto summary { cursor: pointer; font-size: 13px; font-weight: 600; color: #7C2D12; }
+body.tvmode .liveproto { display: none; }
