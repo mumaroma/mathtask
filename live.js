@@ -51,7 +51,7 @@ function liveOpen(code, presenceKey) {
 function liveClose() {
   if (document.body.classList.contains("tvmode")) liveTV(false);
   if (LIVE.ch) { try { sb.removeChannel(LIVE.ch); } catch (e) { } }
-  LIVE.ch = null; LIVE.code = null; LIVE.students = {}; LIVE.spot = null; LIVE.teacherDrive = false;
+  LIVE.ch = null; LIVE.code = null; LIVE.students = {}; LIVE.spot = null; 
   if (LIVE.msgFn) { window.removeEventListener("message", LIVE.msgFn); LIVE.msgFn = null; }
   if (LIVE.timer) { clearTimeout(LIVE.timer); LIVE.timer = null; }
 }
@@ -76,6 +76,7 @@ function liveStudentStart(appRow) {
   LIVE.msgFn = function (e) {
     var fr = frame(); if (!fr || e.source !== fr.contentWindow) return;
     var d = e.data; if (!d || d.type !== "sim:state") return;
+    if (!LIVE.viewingTeacher) LIVE.myState = d.state;          /* 선생님 화면을 보는 동안은 내 작업으로 기록하지 않음 */
     pendingState = { sid: LIVE.sid, name: LIVE.name, app: LIVE.appId, title: LIVE.appTitle, state: d.state, mode: d.mode || "", t: Date.now() };
     var wait = Math.max(0, 250 - (Date.now() - LIVE.lastSent));
     if (!LIVE.timer) LIVE.timer = setTimeout(flush, wait);
@@ -85,8 +86,16 @@ function liveStudentStart(appRow) {
   ch.on("broadcast", { event: "control" }, function (m) {
     var p = m.payload || {}; if (p.sid !== LIVE.sid && p.sid !== "*") return;
     var fr = frame(); if (!fr) return;
-    if (p.action === "apply" && p.state) { try { fr.contentWindow.postMessage({ type: "sim:apply", state: p.state }, "*"); } catch (e) { } }
-    if (p.action === "lock") { fr.style.pointerEvents = p.on ? "none" : ""; liveBanner(p.on ? "선생님이 내 화면을 조작하고 있습니다" : ""); }
+    if (p.action === "apply" && p.state) {
+      if (p.app && String(p.app) !== String(LIVE.appId)) return;   /* 다른 과제의 화면이면 무시 */
+      LIVE.viewingTeacher = true;
+      try { fr.contentWindow.postMessage({ type: "sim:apply", state: p.state }, "*"); } catch (e) { }
+      liveBanner("선생님이 보낸 화면을 보고 있습니다.", "내 작업으로 돌아가기", function () {
+        LIVE.viewingTeacher = false;
+        if (LIVE.myState) { try { fr.contentWindow.postMessage({ type: "sim:apply", state: LIVE.myState }, "*"); } catch (e) { } }
+        liveBanner("");
+      });
+    }
     if (p.action === "spotlight") liveBanner(p.on ? "내 화면이 TV에 공유되고 있습니다" : "");
     if (p.action === "ping") { try { fr.contentWindow.postMessage({ type: "sim:request" }, "*"); } catch (e) { } }
   });
@@ -94,10 +103,13 @@ function liveStudentStart(appRow) {
     if (s === "SUBSCRIBED") ch.track({ name: LIVE.name, app: LIVE.appId, title: LIVE.appTitle, joined: Date.now() });
   });
 }
-function liveBanner(text) {
+function liveBanner(text, btnText, onBtn) {
   var b = app.querySelector("#livebanner");
   if (!b) { var holder = $("#holder"); if (!holder) return; b = document.createElement("div"); b.id = "livebanner"; b.className = "banner livebanner"; holder.parentNode.insertBefore(b, holder); }
-  b.textContent = text; b.style.display = text ? "block" : "none";
+  b.innerHTML = ""; b.style.display = text ? "flex" : "none";
+  if (!text) return;
+  var span = document.createElement("span"); span.textContent = text; b.appendChild(span);
+  if (btnText) { var bt = document.createElement("button"); bt.className = "btn-s"; bt.textContent = btnText; bt.addEventListener("click", onBtn); b.appendChild(bt); }
 }
 
 /* ── 교사: 실시간 탭 ────────────────────────────────────── */
@@ -137,18 +149,10 @@ function panelLive() {
     var p = m.payload || {}; if (!p.sid) return;
     var s = LIVE.students[p.sid] = LIVE.students[p.sid] || { sid: p.sid, online: true };
     s.name = p.name || s.name; s.app = p.app; s.title = p.title; s.state = p.state; s.mode = p.mode; s.t = p.t || Date.now();
-    liveEnsureHtml(s.app, function () { liveApplyCard(s); if (LIVE.spot === s.sid && !LIVE.teacherDrive) liveApplySpot(s); liveRenderSummary(); });
+    liveEnsureHtml(s.app, function () { liveApplyCard(s); if (LIVE.spot === s.sid) liveApplySpot(s); liveRenderSummary(); });
   });
   ch.subscribe(function (s) { if (s === "SUBSCRIBED") ch.track({ teacher: true }); });
 
-  /* 크게 보기 화면(교사 조작)에서 오는 상태 → 해당 학생에게 */
-  LIVE.msgFn = function (e) {
-    var big = app.querySelector("#livespot iframe"); if (!big || e.source !== big.contentWindow) return;
-    var d = e.data; if (!d || d.type !== "sim:state" || !LIVE.teacherDrive || !LIVE.spot) return;
-    var now = Date.now(); if (now - LIVE.lastSent < 200) return; LIVE.lastSent = now;
-    LIVE.ch.send({ type: "broadcast", event: "control", payload: { sid: LIVE.spot, action: "apply", state: d.state } });
-  };
-  window.addEventListener("message", LIVE.msgFn);
 }
 
 function liveEnsureHtml(appId, done) {
@@ -211,23 +215,20 @@ function liveRenderSummary() {
 function liveSpot(sid) {
   var s = LIVE.students[sid]; if (!s) return;
   if (LIVE.spot && LIVE.spot !== sid) liveControl(LIVE.spot, { action: "spotlight", on: false });
-  if (LIVE.teacherDrive) liveDrive(false);
   LIVE.spot = sid;
   var box = $("#livespot"); box.hidden = false;
   box.innerHTML =
     '<div class="between" style="margin-bottom:6px"><b>' + esc(LIVE.hideName ? "학생" : (s.name || "학생")) + ' <span class="m">' + esc(s.title || "") + '</span></b>' +
     '<span class="row" style="gap:6px">' +
-      '<button class="btn-s" id="spDrive">교사 조작 켜기</button>' +
-      '<button class="btn-s" id="spAll">이 화면을 전체에게</button>' +
+      '<button class="btn-s" id="spAll">이 화면을 전체에게 보여 주기</button>' +
       '<button class="btn-s" id="spClose">닫기</button></span></div>' +
     '<div class="spframe"></div>' +
-    '<p class="hint" style="margin-top:6px">교사 조작을 켜면 이 화면에서 움직인 것이 그 학생 화면에 그대로 반영되고, 학생 입력은 잠깁니다.</p>';
-  on("#spClose", "click", function () { liveDrive(false); liveControl(sid, { action: "spotlight", on: false }); LIVE.spot = null; box.hidden = true; box.innerHTML = ""; liveRenderGrid(); });
-  on("#spDrive", "click", function () { liveDrive(!LIVE.teacherDrive); });
+    '<p class="hint" style="margin-top:6px">여기서는 보기만 합니다. "전체에게 보여 주기"를 누르면 같은 과제를 열어 둔 모든 학생의 화면이 이 상태로 바뀌고, 학생은 "내 작업으로 돌아가기"로 자기 작업을 되찾습니다.</p>';
+  on("#spClose", "click", function () { liveControl(sid, { action: "spotlight", on: false }); LIVE.spot = null; box.hidden = true; box.innerHTML = ""; liveRenderGrid(); });
   on("#spAll", "click", function (e) {
-    var big = box.querySelector("iframe"); if (!big) return;
-    var st = LIVE.students[LIVE.spot] && LIVE.students[LIVE.spot].state; if (!st) return;
-    liveControl("*", { action: "apply", state: st }); copyFlash(e.target, "전체에게 보냈습니다");
+    var cur = LIVE.students[LIVE.spot]; if (!cur || !cur.state) return;
+    if (!window.confirm("같은 과제를 열어 둔 모든 학생의 화면이 이 상태로 바뀝니다. 학생은 '내 작업으로 돌아가기'로 되돌릴 수 있습니다. 보낼까요?")) return;
+    liveControl("*", { action: "apply", state: cur.state, app: cur.app }); copyFlash(e.target, "전체에게 보냈습니다");
   });
   liveControl(sid, { action: "spotlight", on: true });
   liveEnsureHtml(s.app, function () { liveApplySpot(s, true); });
@@ -238,17 +239,12 @@ function liveApplySpot(s, rebuild) {
   var fr = box.querySelector("iframe");
   if (rebuild || !fr || fr.dataset.app !== String(s.app)) {
     box.innerHTML = ""; fr = document.createElement("iframe"); fr.dataset.app = String(s.app); fr.className = "frame";
-    fr.setAttribute("sandbox", "allow-scripts allow-forms allow-modals");
+    fr.setAttribute("sandbox", "allow-scripts"); fr.style.pointerEvents = "none";
     fr.srcdoc = LIVE.html[s.app] || "";
     fr.addEventListener("load", function () { fr.dataset.ready = "1"; if (s.state) fr.contentWindow.postMessage({ type: "sim:apply", state: s.state }, "*"); });
     box.appendChild(fr); return;
   }
   if (fr.dataset.ready && s.state) fr.contentWindow.postMessage({ type: "sim:apply", state: s.state }, "*");
-}
-function liveDrive(on) {
-  LIVE.teacherDrive = on;
-  var b = $("#spDrive"); if (b) { b.textContent = on ? "교사 조작 끄기" : "교사 조작 켜기"; b.classList.toggle("btn-p", on); }
-  if (LIVE.spot) liveControl(LIVE.spot, { action: "lock", on: on });
 }
 function liveControl(sid, payload) {
   if (!LIVE.ch) return;
