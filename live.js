@@ -187,6 +187,12 @@ function panelLive() {
 
 }
 
+/* iframe 이 막 로드됐을 때는 과제 스크립트의 초기화가 아직 끝나지 않았을 수 있어, 상태를 몇 번에 나눠 보냅니다 */
+function liveApplyRetry(fr, getState) {
+  [0, 300, 900, 2000].forEach(function (ms) {
+    setTimeout(function () { var st = getState(); if (!st || !fr || !fr.contentWindow) return; try { fr.contentWindow.postMessage({ type: "sim:apply", state: st }, "*"); } catch (e) { } }, ms);
+  });
+}
 function liveEnsureHtml(appId, done) {
   if (!appId) return done();
   if (LIVE.html[appId]) return done();
@@ -234,7 +240,7 @@ function liveApplyCard(s) {
     box.innerHTML = ""; fr = document.createElement("iframe"); fr.dataset.app = String(s.app);
     fr.setAttribute("sandbox", "allow-scripts"); fr.style.pointerEvents = "none";
     fr.srcdoc = LIVE.html[s.app] || "<p style='font:13px sans-serif;color:#888;padding:12px'>과제를 불러오지 못했습니다</p>";
-    fr.addEventListener("load", function () { fr.dataset.ready = "1"; if (s.state) fr.contentWindow.postMessage({ type: "sim:apply", state: s.state }, "*"); });
+    fr.addEventListener("load", function () { fr.dataset.ready = "1"; liveApplyRetry(fr, function () { return s.state; }); });
     box.appendChild(fr); liveScaleThumbs();
     return;
   }
@@ -266,7 +272,7 @@ function liveOpenWindow(sid) {
   w.document.close();
   var fr = w.document.querySelector("iframe");
   fr.dataset.app = String(s.app);
-  fr.addEventListener("load", function () { fr.dataset.ready = "1"; if (s.state) fr.contentWindow.postMessage({ type: "sim:apply", state: s.state }, "*"); });
+  fr.addEventListener("load", function () { fr.dataset.ready = "1"; liveApplyRetry(fr, function () { var cur = LIVE.students[sid]; return cur && cur.state; }); });
   fr.srcdoc = LIVE.html[s.app] || "";
   liveControl(sid, { action: "spotlight", on: true });
   var poll = setInterval(function () { if (w.closed) { clearInterval(poll); liveControl(sid, { action: "spotlight", on: false }); liveRenderGrid(); } }, 1000);
