@@ -10,8 +10,34 @@
    ============================================================ */
 
 var LIVE = { ch: null, code: null, role: null, sid: null, name: null, appId: null, appTitle: null, lastSent: 0, timer: null,
-  students: {}, html: {}, spot: null, teacherDrive: false, msgFn: null };
+  students: {}, html: {}, spot: null, teacherDrive: false, msgFn: null, hideName: false, cols: 4 };
 
+/* TV 모드 켜기/끄기 — 켜면 화면 오른쪽 위에 '되돌아오기' 버튼이 고정되고, Esc 로도 끕니다 */
+function liveTV(on) {
+  document.body.classList.toggle("tvmode", !!on);
+  var btn = document.getElementById("tvexit");
+  if (on) {
+    if (!btn) {
+      btn = document.createElement("button"); btn.id = "tvexit"; btn.className = "tvexit"; btn.textContent = "✕ TV 모드 끝내기";
+      btn.addEventListener("click", function () { liveTV(false); });
+      document.body.appendChild(btn);
+    }
+    if (!LIVE.escFn) { LIVE.escFn = function (e) { if (e.key === "Escape") liveTV(false); }; document.addEventListener("keydown", LIVE.escFn); }
+  } else {
+    if (btn) btn.remove();
+    if (LIVE.escFn) { document.removeEventListener("keydown", LIVE.escFn); LIVE.escFn = null; }
+    var t = document.getElementById("liveTV"); if (t) t.textContent = "TV 모드";
+  }
+}
+function liveApplyCols() { var g = $("#livegrid"); if (g) g.style.gridTemplateColumns = "repeat(" + (LIVE.cols || 4) + ", minmax(0, 1fr))"; setTimeout(liveScaleThumbs, 50); }
+/* 카드 안 iframe(1000×750 고정)을 카드 너비에 맞춰 축소 */
+function liveScaleThumbs() {
+  var grid = $("#livegrid"); if (!grid) return;
+  grid.querySelectorAll(".lframe iframe").forEach(function (fr) {
+    var w = fr.parentElement.clientWidth || 200; fr.style.transform = "scale(" + (w / 1000) + ")";
+  });
+}
+if (!window.__liveResizeWired) { window.__liveResizeWired = true; window.addEventListener("resize", function () { liveScaleThumbs(); }); }
 function liveRoom(code) { return "room-" + code; }
 function liveIsOn() { return ST.space && ST.space.mode === "live"; }
 
@@ -23,6 +49,7 @@ function liveOpen(code, presenceKey) {
   return LIVE.ch;
 }
 function liveClose() {
+  if (document.body.classList.contains("tvmode")) liveTV(false);
   if (LIVE.ch) { try { sb.removeChannel(LIVE.ch); } catch (e) { } }
   LIVE.ch = null; LIVE.code = null; LIVE.students = {}; LIVE.spot = null; LIVE.teacherDrive = false;
   if (LIVE.msgFn) { window.removeEventListener("message", LIVE.msgFn); LIVE.msgFn = null; }
@@ -78,14 +105,19 @@ function panelLive() {
   var sp = ST.space;
   $("#panel").innerHTML =
     '<div class="card"><div class="between" style="margin-bottom:8px"><h2 style="margin:0">실시간 모니터 <span class="modetag" style="background:#B7410E">Beta</span></h2>' +
-      '<span class="row" style="gap:8px"><span class="m" id="livecount">접속 0명</span>' +
+      '<span class="row" style="gap:8px;align-items:center"><span class="m" id="livecount">접속 0명</span>' +
+      '<label class="dl" style="font-size:12px;margin:0"><input type="checkbox" id="liveHideName"> 이름 숨기기</label>' +
+      '<select id="liveCols" title="한 줄에 몇 개"><option value="3">3개씩</option><option value="4" selected>4개씩</option><option value="5">5개씩</option><option value="6">6개씩</option></select>' +
       '<button class="btn-s" id="liveTV">TV 모드</button></span></div>' +
     '<p class="hint">학생이 과제를 열고 조작하면 그 상태가 아래 카드에 그대로 다시 그려집니다. 카드를 누르면 크게 보고, 크게 보기 화면에서 직접 조작해 그 학생에게 보낼 수 있습니다. ' +
       '과제 HTML 에 <code>sim:state</code> / <code>sim:apply</code> 규약이 들어 있어야 합니다.</p>' +
     '<div class="livesum" id="livesum"></div>' +
     '<div class="livespot" id="livespot" hidden></div>' +
     '<div class="livegrid" id="livegrid"><div class="empty">학생이 과제를 열면 여기에 나타납니다.</div></div></div>';
-  on("#liveTV", "click", function () { document.body.classList.toggle("tvmode"); });
+  on("#liveTV", "click", function () { liveTV(!document.body.classList.contains("tvmode")); });
+  on("#liveHideName", "change", function () { LIVE.hideName = $("#liveHideName").checked; liveRenderGrid(); });
+  on("#liveCols", "change", function () { LIVE.cols = +$("#liveCols").value; liveApplyCols(); });
+  $("#liveHideName").checked = !!LIVE.hideName; $("#liveCols").value = String(LIVE.cols || 4); liveApplyCols();
 
   LIVE.role = "teacher";
   var ch = liveOpen(sp.code, "teacher-" + (ST.user ? ST.user.id : "x"));
@@ -146,7 +178,7 @@ function liveRenderGrid() {
     }
     card.classList.toggle("off", !s.online);
     card.classList.toggle("spot", LIVE.spot === s.sid);
-    card.querySelector(".lname").textContent = s.name || "학생";
+    card.querySelector(".lname").textContent = LIVE.hideName ? ("학생 " + (list.indexOf(s) + 1)) : (s.name || "학생");
     card.querySelector(".lmode").textContent = (s.mode || (s.online ? "접속" : "나감"));
   });
 }
@@ -162,7 +194,7 @@ function liveApplyCard(s) {
     fr.setAttribute("sandbox", "allow-scripts"); fr.style.pointerEvents = "none";
     fr.srcdoc = LIVE.html[s.app] || "<p style='font:13px sans-serif;color:#888;padding:12px'>과제를 불러오지 못했습니다</p>";
     fr.addEventListener("load", function () { fr.dataset.ready = "1"; if (s.state) fr.contentWindow.postMessage({ type: "sim:apply", state: s.state }, "*"); });
-    box.appendChild(fr);
+    box.appendChild(fr); liveScaleThumbs();
     return;
   }
   if (fr.dataset.ready && s.state) fr.contentWindow.postMessage({ type: "sim:apply", state: s.state }, "*");
@@ -183,7 +215,7 @@ function liveSpot(sid) {
   LIVE.spot = sid;
   var box = $("#livespot"); box.hidden = false;
   box.innerHTML =
-    '<div class="between" style="margin-bottom:6px"><b>' + esc(s.name || "학생") + ' <span class="m">' + esc(s.title || "") + '</span></b>' +
+    '<div class="between" style="margin-bottom:6px"><b>' + esc(LIVE.hideName ? "학생" : (s.name || "학생")) + ' <span class="m">' + esc(s.title || "") + '</span></b>' +
     '<span class="row" style="gap:6px">' +
       '<button class="btn-s" id="spDrive">교사 조작 켜기</button>' +
       '<button class="btn-s" id="spAll">이 화면을 전체에게</button>' +
