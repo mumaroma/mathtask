@@ -20,7 +20,7 @@ function viewSpaces() {
             '<span class="code-sm">' + esc(s.code) + '</span>' +
             '<div class="grow"><div class="t">' +
               '<button class="titlebtn open" data-code="' + esc(s.code) + '">' + esc(s.title) + '</button>' +
-              '<span class="modetag ' + (op ? "open" : "cls") + '">' + (op ? "공개용" : "수업용") + '</span>' +
+              '<span class="modetag ' + modeClass(s.mode) + '">' + modeLabel(s.mode) + '</span>' +
               '<button class="iconbtn srn" data-code="' + esc(s.code) + '" data-t="' + esc(s.title) + '" ' +
                 'title="이름 수정" aria-label="이름 수정">' + ICON.pencil + '</button>' +
               (mine ? '<button class="iconbtn danger del" data-code="' + esc(s.code) + '" ' +
@@ -32,8 +32,9 @@ function viewSpaces() {
               '<div class="menu" id="ms' + esc(s.code) + '" hidden>' +
                 '<button class="mi open" data-code="' + esc(s.code) + '">' + ICON.play + '열기</button>' +
                 '<button class="mi link" data-code="' + esc(s.code) + '">' + ICON.copy + '링크 복사</button>' +
-                '<button class="mi smode" data-code="' + esc(s.code) + '" data-v="' + esc(s.mode || "class") + '">' + ICON.pencil +
-                (s.mode === "open" ? '수업용으로 바꾸기' : '공개용으로 바꾸기') + '</button>' +
+                '<button class="mi smode" data-code="' + esc(s.code) + '" data-v="' + esc(s.mode || "class") + '" data-n="open">' + ICON.pencil + '공개용으로 바꾸기</button>' +
+                '<button class="mi smode" data-code="' + esc(s.code) + '" data-v="' + esc(s.mode || "class") + '" data-n="class">' + ICON.pencil + '수업용으로 바꾸기</button>' +
+                '<button class="mi smode" data-code="' + esc(s.code) + '" data-v="' + esc(s.mode || "class") + '" data-n="live">' + ICON.pencil + '실시간 수업용(Beta)으로 바꾸기</button>' +
               '<button class="mi sfold" data-code="' + esc(s.code) + '" data-f="' + esc(s.folder || "") + '">' + ICON.folder + '폴더 옮기기</button>' +
               '<button class="mi sdup" data-code="' + esc(s.code) + '" data-t="' + esc(s.title) + '">' + ICON.copy + '복제</button>' +
               '</div></span></div>';
@@ -63,6 +64,7 @@ function viewSpaces() {
         '<select id="smode">' +
           '<option value="class">수업용 — 학생이 이름을 적고 들어오며 결과를 보냅니다</option>' +
           '<option value="open">공개용 — 바로 실행만 하고 기록은 남기지 않습니다</option>' +
+          '<option value="live">실시간 수업용(Beta) — 수업용과 같되, 학생 화면 상태를 교사가 실시간으로 보고 조작합니다</option>' +
         '</select>' +
         '<div class="err" id="err"></div>' +
         '<button class="btn-p" id="make">공간 만들기</button></div>' +
@@ -92,10 +94,13 @@ function viewSpaces() {
     });
     app.querySelectorAll(".smode").forEach(function (b) {
       b.addEventListener("click", function () {
-        var next = b.dataset.v === "open" ? "class" : "open";
+        var next = b.dataset.n || (b.dataset.v === "open" ? "class" : "open");
+        if (next === (b.dataset.v || "class")) return;
         var msg = next === "open"
           ? "공개용으로 바꾸면 학생이 이름 없이 바로 들어와 실행만 합니다. 결과 보내기와 접속 기록이 멈춥니다. 이미 쌓인 기록은 그대로 남습니다."
-          : "수업용으로 바꾸면 학생이 이름과 비밀번호를 적고 들어오며 결과를 보낼 수 있습니다.";
+          : next === "live"
+            ? "실시간 수업용(Beta)으로 바꾸면 수업용과 똑같이 기록·제출이 되고, 추가로 학생이 과제를 조작하는 상태가 교사 화면의 '실시간' 탭에 실시간으로 보입니다. 시험 중인 기능입니다."
+            : "수업용으로 바꾸면 학생이 이름과 비밀번호를 적고 들어오며 결과를 보낼 수 있습니다.";
         if (!window.confirm(msg)) return;
         sb.from("spaces").update({ mode: next }).eq("code", b.dataset.code).then(function (r) {
           if (r.error) return alert("바꾸지 못했습니다: " + r.error.message);
@@ -447,8 +452,8 @@ function viewDash() {
       '<button class="btn-s" id="back">← 내 공간 목록</button>' +
       '<span class="m">' + esc(ST.user.email) + '</span></div>' +
     '<div class="card ' + (sp.mode === "open" ? "m-open" : "m-class") + '">' +
-      '<span class="modetag ' + (sp.mode === "open" ? "open" : "cls") + '" style="margin-bottom:8px">' +
-      (sp.mode === "open" ? "공개용 · 기록을 남기지 않습니다" : "수업용 · 접속과 제출이 기록됩니다") + '</span>' +
+      '<span class="modetag ' + modeClass(sp.mode) + '" style="margin-bottom:8px">' +
+      (sp.mode === "open" ? "공개용 · 기록을 남기지 않습니다" : sp.mode === "live" ? "실시간 수업용(Beta) · 접속과 제출이 기록되고 학생 화면을 실시간으로 봅니다" : "수업용 · 접속과 제출이 기록됩니다") + '</span>' +
 
       '<div class="titlerow"><h2>' + esc(sp.title) + '</h2>' +
       (sp.owner === ST.user.id ? '<button class="btn-d" id="renSpace">이름 수정</button>' : '') + '</div>' +
@@ -474,7 +479,8 @@ function viewDash() {
       (sp.mode === "open" || isViewer() ? '' :
         '<button class="tab' + (ST.tab === "log" ? " on" : "") + '" data-tab="log">접속 기록</button>' +
         '<button class="tab' + (ST.tab === "sub" ? " on" : "") + '" data-tab="sub">제출 결과</button>' +
-        '<button class="tab' + (ST.tab === "stu" ? " on" : "") + '" data-tab="stu">학생 명단</button>') +
+        '<button class="tab' + (ST.tab === "stu" ? " on" : "") + '" data-tab="stu">학생 명단</button>' +
+        (sp.mode === "live" ? '<button class="tab' + (ST.tab === "live" ? " on" : "") + '" data-tab="live">실시간 <span class="modetag live" style="margin-left:4px">Beta</span></button>' : '')) +
       (sp.owner === ST.user.id
         ? '<button class="tab' + (ST.tab === "mem" ? " on" : "") + '" data-tab="mem">함께 관리</button>'
         : '') +
@@ -512,7 +518,9 @@ function viewDash() {
   });
 
   if ((sp.mode === "open" || isViewer()) && ST.tab !== "apps" && ST.tab !== "mem") ST.tab = "apps";
+  if (typeof liveClose === "function" && ST.tab !== "live") liveClose();
   if (ST.tab === "apps") panelApps();
+  else if (ST.tab === "live" && sp.mode === "live") panelLive();
   else if (ST.tab === "log") panelLog();
   else if (ST.tab === "mem") panelMembers();
   else if (ST.tab === "stu") panelStudents();
@@ -551,7 +559,7 @@ function wireFolderSelect(selId, inputId) {
 var HELP = {
   spaces: ["내 과제 공간", [
     "공간은 학급이나 단원별로 여러 개 만들 수 있고, 폴더로 묶어 정리합니다.",
-    "수업용 공간은 학생이 이름으로 들어와 결과를 보내고 기록이 남습니다. 공개용 공간은 이름 없이 바로 실행만 하고 기록이 남지 않습니다.",
+    "수업용 공간은 학생이 이름으로 들어와 결과를 보내고 기록이 남습니다. 공개용 공간은 이름 없이 바로 실행만 하고 기록이 남지 않습니다. 실시간 수업용(Beta)은 수업용에 학생 화면 실시간 모니터가 더해진 시험 기능입니다.",
     "공간 이름을 누르면 안으로 들어가고, 연필로 이름을 고치고 휴지통으로 지웁니다. ⋯ 안에는 열기·링크 복사·폴더 옮기기·복제가 있습니다.",
     "복제는 과제를 그대로 옮겨 담은 새 공간을 만듭니다. 학생 기록은 따라가지 않습니다.",
     "오른쪽 위 과제 보관함에서는 내 모든 공간의 과제를 한눈에 보고 원하는 공간에 바로 넣을 수 있습니다."
@@ -581,6 +589,13 @@ var HELP = {
     "비밀번호는 네 자리 이상이어야 합니다. 학번이 짧으면 앞에 0을 붙여 맞춰 주세요.",
     "명단에 없는 이름은 들어오지 못하게 잠글 수 있습니다. 명단을 다 넣은 뒤 켜세요.",
     "비밀번호를 잊은 학생은 초기화를 눌러 주시면 그 이름으로 다시 등록합니다. 이미 낸 제출물은 그대로 남습니다."
+  ]],
+  live: ["실시간 모니터 (Beta)", [
+    "학생이 과제를 열고 조작하면 그 상태가 카드마다 다시 그려집니다. 영상이 아니라 좌표·각도 같은 숫자만 오가므로 가볍습니다.",
+    "카드를 누르면 크게 보기가 열리고, 교사 조작을 켜면 이 화면에서 움직인 것이 그 학생 화면에 반영되며 학생 입력은 잠깁니다.",
+    "'이 화면을 전체에게'는 지금 보고 있는 상태를 모든 학생 화면에 깔아 줍니다. 예시 상황을 함께 볼 때 쓰세요.",
+    "TV 모드는 윗부분을 숨기고 카드만 크게 보여 줍니다. TV 에 연결한 컴퓨터에서 켜 두세요.",
+    "과제 HTML 에 sim:state / sim:apply 규약(getState·setState)이 들어 있어야 상태가 전달됩니다. 규약이 없는 과제는 접속 여부만 보입니다."
   ]],
   mem: ["함께 관리", [
     "상대 선생님이 구글 로그인에 쓰는 이메일로 초대합니다. 메일이 자동으로 가지는 않으니 직접 알려 주세요.",

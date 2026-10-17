@@ -114,6 +114,10 @@ var ICON = {
   check:  SV('<path d="M5 13l4 4L19 7"/>')
 };
 
+/* 공간 유형 이름표: open(공개용) · class(수업용) · live(실시간 수업용 Beta) */
+function modeLabel(m) { return m === "open" ? "공개용" : (m === "live" ? "실시간 수업용(Beta)" : "수업용"); }
+function modeClass(m) { return m === "open" ? "open" : (m === "live" ? "live" : "cls"); }
+
 var ALPH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function mkCode() {
   var s = "";

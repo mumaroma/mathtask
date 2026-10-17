@@ -74,6 +74,7 @@ function studentGate() {
 
 function studentApps() {
   if (ST.msgFn) { window.removeEventListener("message", ST.msgFn); ST.msgFn = null; }
+  if (typeof liveClose === "function") liveClose();
   render('<div class="card"><div class="empty">과제를 불러오는 중…</div></div>');
   sb.rpc("space_apps", { c: ST.space.code }).then(function (r) {
     ST.apps = sortApps(r.data || []);
@@ -86,6 +87,7 @@ function studentApps() {
             '<button class="btn-s" id="pinbtn">비밀번호 바꾸기</button>' +
             '<button class="btn-d" id="leave">나가기</button></span>'
           : '<span class="m">공개용</span>') + '</div>' +
+      (ST.space.mode === "live" ? '<div class="banner livebanner">실시간 수업(Beta): 과제를 여는 동안 내 활동 상태가 선생님 화면에 실시간으로 보입니다.</div>' : '') +
       '<div class="card"><h2>과제 목록</h2><p class="hint">과제를 골라 여세요.</p>' +
       (ST.apps.length
         ? (function () {
@@ -283,6 +285,7 @@ function studentOpen(id) {
     wirePicker(function (file) { sendResult(file, a); });
     wireHtmlSend(a);
     listenTaskSubmit(a);
+    if (typeof liveStudentStart === "function") liveStudentStart(a);
   });
 }
 
