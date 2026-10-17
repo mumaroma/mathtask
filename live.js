@@ -9,6 +9,32 @@
    과제 쪽에는 window.getState() / window.setState(state) 를 두고 위 메시지로 감싸면 됩니다.
    ============================================================ */
 
+/* 과제 HTML 을 만들 때 AI(클로드 등)에게 붙여 넣는 안내문. 이 규약이 있어야 실시간 모니터에 화면이 재현됩니다. */
+var LIVE_PROMPT = [
+  "이 HTML 과제 앱에 '실시간 수업' 규약을 넣어 주세요. 앱은 부모 창(iframe 바깥)에 자기 상태를 보내고, 부모가 보내는 상태를 받아 복원할 수 있어야 합니다. 조건은 다음과 같습니다.",
+  "",
+  "1. window.getState() : 지금 화면을 다시 그리는 데 필요한 모든 값(점·선·원의 좌표, 선택한 문제 번호, 입력값, 체크 상태 등)을 하나의 JSON 객체로 돌려줍니다. 작게 유지하세요(화면 이미지가 아니라 숫자와 짧은 문자열만).",
+  "2. window.setState(state) : getState() 가 돌려준 객체를 받아 화면을 그 상태로 완전히 복원합니다. 다른 문제 번호면 그 문제를 먼저 불러옵니다.",
+  "3. 사용자가 조작할 때마다(드래그 중 포함) 아래 notify() 를 부릅니다. 초당 4회를 넘지 않게 묶습니다.",
+  "4. window.curMode 에 지금 진행 상태를 짧은 한국어 문장으로 둡니다(예: '문제2 탐구중', '문제2 성공 (3/8)'). 교사 화면에서 집계에 쓰입니다.",
+  "",
+  "아래 코드를 그대로 넣으세요:",
+  "",
+  "let lastSent = 0, notifyTimer = null;",
+  "function notify() {",
+  "  const now = Date.now();",
+  "  if (now - lastSent < 250) { if (!notifyTimer) notifyTimer = setTimeout(() => { notifyTimer = null; notify(); }, 260); return; }",
+  "  lastSent = now;",
+  "  try { if (window.parent !== window) window.parent.postMessage({ type: 'sim:state', state: window.getState(), mode: window.curMode || '' }, '*'); } catch (e) {}",
+  "}",
+  "window.addEventListener('message', (e) => {",
+  "  const d = e.data;",
+  "  if (d && d.type === 'sim:apply' && d.state) { try { window.setState(d.state); } catch (err) {} }",
+  "});",
+  "",
+  "주의: 외부 라이브러리 없이 한 파일(HTML+CSS+JS)로 만들고, 배경은 흰색, 마우스와 터치 모두 지원하세요. 상태를 받았을 때(setState) 다시 notify() 를 부르지 않아도 됩니다."
+].join("\n");
+
 var LIVE = { ch: null, code: null, role: null, sid: null, name: null, appId: null, appTitle: null, lastSent: 0, timer: null,
   students: {}, html: {}, wins: {}, msgFn: null, hideName: false, cols: 4, appFilter: "" };
 
@@ -118,11 +144,20 @@ function panelLive() {
       '<label class="dl" style="font-size:12px;margin:0"><input type="checkbox" id="liveHideName"> 이름 숨기기</label>' +
       '<select id="liveCols" title="한 줄에 몇 개"><option value="3">3개씩</option><option value="4" selected>4개씩</option><option value="5">5개씩</option><option value="6">6개씩</option></select>' +
       '<button class="btn-s" id="liveTV">TV 모드</button></span></div>' +
+    '<details class="liveproto"><summary>과제 HTML 에 넣을 실시간 규약 — AI 에게 붙여 넣는 안내문</summary>' +
+      '<p class="hint">과제를 만들 때(클로드·GPT 등) 이 안내문을 함께 붙여 넣으면 실시간 모니터에서 화면이 재현됩니다. 이미 만든 과제는 HTML 과 이 안내문을 같이 주고 "규약을 추가해 줘"라고 하면 됩니다.</p>' +
+      '<div class="row" style="margin-bottom:8px"><button class="btn-s" id="liveCopyPrompt">안내문 복사</button><button class="btn-s" id="liveDlPrompt">텍스트 파일로 받기</button></div>' +
+      '<textarea id="livePromptBox" readonly style="width:100%;height:200px;font-family:var(--mono);font-size:12px"></textarea></details>' +
     '<p class="hint">학생이 과제를 열고 조작하면 그 상태가 아래 카드에 그대로 다시 그려집니다. 카드를 누르면 <b>새 창</b>에 그 학생의 작업 화면이 크게 열리고 계속 따라 바뀝니다(TV에 끌어다 놓기 좋습니다). ' +
       '과제 HTML 에 <code>sim:state</code> / <code>sim:apply</code> 규약이 들어 있어야 합니다.</p>' +
     '<div class="livesum" id="livesum"></div>' +
     '<div class="livegrid" id="livegrid"><div class="empty">학생이 과제를 열면 여기에 나타납니다.</div></div></div>';
   on("#liveTV", "click", function () { liveTV(!document.body.classList.contains("tvmode")); });
+  $("#livePromptBox").value = LIVE_PROMPT;
+  on("#liveCopyPrompt", "click", function (e) { copy(LIVE_PROMPT, e.target); });
+  on("#liveDlPrompt", "click", function () {
+    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([LIVE_PROMPT], { type: "text/plain;charset=utf-8" })); a.download = "실시간수업_규약_안내문.txt"; a.click();
+  });
   on("#liveHideName", "change", function () { LIVE.hideName = $("#liveHideName").checked; liveRenderGrid(); });
   on("#liveCols", "change", function () { LIVE.cols = +$("#liveCols").value; liveApplyCols(); });
   on("#liveApp", "change", function () { LIVE.appFilter = $("#liveApp").value; liveRenderGrid(); liveRenderSummary(); });
