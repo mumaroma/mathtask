@@ -289,7 +289,7 @@ function studentHistory() {
   render('<div class="card"><div class="empty">내가 보낸 것을 찾는 중…</div></div>');
   sb.rpc("student_history", { tok: ST.studentId })
     .then(function (r) {
-      return signPaths((r.data || []).map(function (x) { return x.image_path; })).then(function () { return r; });
+      return signMine(r.data || [], ST.studentId).then(function () { return r; });
     })
     .then(function (r) {
     var rows = r.data || [];

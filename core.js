@@ -93,6 +93,22 @@ function signPaths(paths) {
 }
 function signed(p) { return SIGN[p] || ""; }
 
+/* 학생 본인 사진: 저장소 읽기는 관리 교사에게만 열려 있으므로(patch-storage.sql)
+   sign-submission 함수가 토큰을 확인한 뒤 서명 주소를 돌려줍니다.
+   rows 는 student_history 가 준 그대로 넣습니다. */
+function signMine(rows, tok) {
+  var ids = (rows || []).filter(function (x) {
+    return x && x.image_path && !SIGN[x.image_path];
+  }).map(function (x) { return x.id; });
+  if (!ids.length || !tok) return Promise.resolve(SIGN);
+  return sb.functions.invoke("sign-submission", { body: { tok: tok, ids: ids } })
+    .then(function (r) {
+      var u = (r && r.data && r.data.urls) || {};
+      Object.keys(u).forEach(function (p) { SIGN[p] = u[p]; });
+      return SIGN;
+    }).catch(function () { return SIGN; });
+}
+
 function render(html) { app.innerHTML = html; window.scrollTo(0, 0); }
 function $(sel) { return app.querySelector(sel); }
 function on(sel, ev, fn) { var e = $(sel); if (e) e.addEventListener(ev, fn); }
