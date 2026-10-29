@@ -74,6 +74,7 @@ function studentGate() {
 
 function studentApps() {
   if (ST.msgFn) { window.removeEventListener("message", ST.msgFn); ST.msgFn = null; }
+  if (ST.saveFn) { window.removeEventListener("message", ST.saveFn); ST.saveFn = null; }
   if (typeof liveClose === "function") liveClose();
   render('<div class="card"><div class="empty">과제를 불러오는 중…</div></div>');
   sb.rpc("space_apps", { c: ST.space.code }).then(function (r) {
@@ -285,6 +286,7 @@ function studentOpen(id) {
     wirePicker(function (file) { sendResult(file, a); });
     wireHtmlSend(a);
     listenTaskSubmit(a);
+    listenTaskSave(a);
     if (typeof liveStudentStart === "function") liveStudentStart(a);
   });
 }
@@ -367,6 +369,32 @@ function listenTaskSubmit(appRow) {
     sendHtml(html, payload, appRow, null).then(reply);
   };
   window.addEventListener("message", ST.msgFn);
+}
+
+/* ── 과제 앱 진행 기록 저장 (추가) ─────────────────────────
+   과제 iframe 은 sandbox 라서 자기 localStorage 를 쓰지 못합니다.
+   과제 → 부모 : { type: "mathtaskLoad" }            (처음 열 때 기록 요청)
+   부모 → 과제 : { type: "mathtaskLoaded", data }    (저장된 기록, 없으면 null)
+   과제 → 부모 : { type: "mathtaskSave", data }      (기록이 바뀔 때마다)
+   기록은 이 기기의 브라우저에 공간·과제·학생별로 따로 저장됩니다. */
+var SAVE_MAX = 100000;
+function listenTaskSave(appRow) {
+  if (ST.saveFn) window.removeEventListener("message", ST.saveFn);
+  var key = "mt-save-" + ST.space.code + "-" + appRow.id + "-" + (ST.studentId || "guest");
+  ST.saveFn = function (e) {
+    var fr = app.querySelector("#holder iframe");
+    if (!fr || e.source !== fr.contentWindow) return;
+    var d = e.data;
+    if (!d) return;
+    if (d.type === "mathtaskLoad") {
+      var v = null;
+      try { v = JSON.parse(localStorage.getItem(key) || "null"); } catch (x) { v = null; }
+      try { fr.contentWindow.postMessage({ type: "mathtaskLoaded", data: v }, "*"); } catch (x) { }
+    } else if (d.type === "mathtaskSave") {
+      try { var str = JSON.stringify(d.data); if (str && str.length <= SAVE_MAX) localStorage.setItem(key, str); } catch (x) { }
+    }
+  };
+  window.addEventListener("message", ST.saveFn);
 }
 
 /* 그림·문서 등 파일 그대로 보내기 */
