@@ -328,40 +328,44 @@
   letter-spacing: -.4px; line-height: 1.35; overflow-wrap: anywhere; }
 .between .btn-s, .between .btn-d, .between .btn-p { white-space: nowrap; }
 
-.taskgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: 12px; margin: 12px 0 4px; }
+.taskgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(142px, 1fr));
+  gap: 10px; margin: 12px 0 4px; }
 
 .taskcard { position: relative; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 9px; width: 100%;
-  background: var(--tbg, #FFF8E6); border: 2px solid #2C2C2A; border-radius: 16px;
-  padding: 20px 12px 15px; box-shadow: 4px 4px 0 #2C2C2A;
+  align-items: stretch; width: 100%; overflow: hidden;
+  background: var(--tbg, #FFF8E6); border: 2px solid #2C2C2A; border-radius: 13px;
+  padding: 0 0 8px; box-shadow: 3px 3px 0 #2C2C2A;
   cursor: pointer; text-align: center; font-family: var(--font);
   transition: transform .08s, box-shadow .08s; }
-.taskcard:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 #2C2C2A; }
+.taskcard:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 #2C2C2A; }
 .taskcard:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #2C2C2A; }
 .taskcard:focus-visible { outline: 3px solid var(--tc, #1B4965); outline-offset: 3px; }
 
-.taskcard .tnum { position: absolute; top: 7px; left: 10px;
-  font-family: var(--mono); font-size: 10px; font-weight: 700;
-  color: var(--tc, #5B5348); opacity: .75;
-  background: none; border: none; padding: 0; border-radius: 0; }
-
-.taskcard .tico { width: 54px; height: 54px; flex: none; border-radius: 50%;
-  background: #fff; border: 2px solid #2C2C2A; color: var(--tc, #1B4965);
+/* 과제 미리보기: 실제 과제 화면을 작게 줄여서 보여 줍니다 */
+.taskcard .tprev { position: relative; width: 100%; aspect-ratio: 66 / 45; flex: none;
+  overflow: hidden; background: #FCFAF3; border-bottom: 2px solid #2C2C2A;
   display: flex; align-items: center; justify-content: center; }
-.taskcard .tico svg { width: 28px; height: 28px; }
+.taskcard .tph { color: var(--tc, #1B4965); opacity: .5;
+  display: flex; align-items: center; justify-content: center; }
+.taskcard .tph svg { width: 26px; height: 26px; }
+.taskcard .tframe { position: absolute; top: 0; left: 0; width: 660px; height: 450px;
+  border: 0; transform: scale(.3); transform-origin: 0 0;
+  pointer-events: none; background: #fff; }
 
-.taskcard .ttitle { font-size: 13.5px; font-weight: 700; color: #2C2C2A;
-  line-height: 1.4; overflow-wrap: anywhere; }
-.taskcard .tnote { font-size: 11px; color: #5F5E5A; line-height: 1.5;
-  overflow-wrap: anywhere; background: none; border: none; padding: 0; margin: 0; }
+.taskcard .tnum { position: absolute; top: 5px; left: 5px; z-index: 2;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+  color: #2C2C2A; background: rgba(255, 255, 255, .85);
+  border: 1px solid #2C2C2A; border-radius: 4px; padding: 0 4px; }
+
+.taskcard .ttitle { font-size: 12.5px; font-weight: 700; color: #2C2C2A;
+  line-height: 1.35; overflow-wrap: anywhere; padding: 7px 7px 0; }
+.taskcard .tnote { font-size: 10.5px; color: #5F5E5A; line-height: 1.45;
+  overflow-wrap: anywhere; background: none; border: none; margin: 0; padding: 3px 7px 0; }
 
 @media (max-width: 520px) {
   .spacename { font-size: 17px; }
-  .taskgrid { grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 10px; }
-  .taskcard { padding: 16px 10px 13px; }
-  .taskcard .tico { width: 46px; height: 46px; }
-  .taskcard .tico svg { width: 24px; height: 24px; }
+  .taskgrid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+  .taskcard .ttitle { font-size: 11.5px; }
 }
 
 /* 순위 과제 표시 */

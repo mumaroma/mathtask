@@ -151,14 +151,15 @@ function studentApps() {
               var body = '<div class="taskgrid">' + g.rows.map(function (a) {
                 n++;
                 var c = taskColor(a.title);
-                return '<button class="taskcard open" data-id="' + a.id + '" ' +
+                return '<div class="taskcard open" role="button" tabindex="0" data-id="' + a.id + '" ' +
                   'style="--tbg:' + c[0] + ';--tc:' + c[1] + '">' +
+                  '<span class="tprev" data-lazy="' + a.id + '">' +
+                    '<span class="tph">' + taskIcon(a.title) + '</span></span>' +
                   '<span class="tnum">' + String(n).padStart(2, "0") + '</span>' +
-                  '<span class="tico">' + taskIcon(a.title) + '</span>' +
                   '<span class="ttitle">' + esc(a.title) +
                     (a.scored ? '<span class="scoretag">순위</span>' : '') + '</span>' +
                   (a.note ? '<span class="tnote">' + esc(a.note) + '</span>' : '') +
-                  '</button>';
+                  '</div>';
               }).join("") + '</div>';
               if (one) return body;
               return '<button class="ftog" data-i="' + gi + '"><span>▾ ' + esc(g.label) + '</span>' +
@@ -184,8 +185,64 @@ function studentApps() {
     });
     app.querySelectorAll(".open").forEach(function (b) {
       b.addEventListener("click", function () { studentOpen(b.dataset.id); });
+      b.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); studentOpen(b.dataset.id); }
+      });
     });
+    lazyTaskThumbs();
   });
+}
+
+/* 과제 카드에 작은 미리보기 채우기 (보이는 것부터 하나씩)
+   학생은 apps 표를 직접 읽지 못하므로 app_html 로 받아옵니다.
+   못 받으면 처음에 깔아 둔 아이콘이 그대로 남습니다. */
+var TPREV_W = 660;   /* 미리보기 안에서 과제를 이 폭으로 그린 뒤 카드 폭에 맞춰 줄입니다 */
+
+/* 카드 폭이 제각각이라 배율을 그때그때 맞춥니다 (창 크기가 바뀌어도 다시) */
+function fitTaskFrames() {
+  app.querySelectorAll(".tprev .tframe").forEach(function (f) {
+    var w = f.parentNode.clientWidth;
+    if (w) f.style.transform = "scale(" + (w / TPREV_W).toFixed(4) + ")";
+  });
+}
+if (!window.__tprevFit) {
+  window.__tprevFit = true;
+  window.addEventListener("resize", function () {
+    clearTimeout(window.__tprevT);
+    window.__tprevT = setTimeout(fitTaskFrames, 150);
+  });
+}
+
+function lazyTaskThumbs() {
+  var boxes = Array.prototype.slice.call(app.querySelectorAll(".tprev[data-lazy]"));
+  if (!boxes.length) return;
+  var fill = function (box) {
+    var id = box.dataset.lazy;
+    if (!id) return;
+    delete box.dataset.lazy;
+    sb.rpc("app_html", { p_id: id, p_code: ST.space.code }).then(function (r) {
+      var a = (r.data || [])[0];
+      if (!a || !a.html) return;
+      var f = document.createElement("iframe");
+      f.setAttribute("sandbox", "allow-scripts");
+      f.setAttribute("scrolling", "no");
+      f.setAttribute("tabindex", "-1");
+      f.setAttribute("aria-hidden", "true");
+      f.className = "tframe";
+      f.srcdoc = a.html;
+      box.innerHTML = "";
+      box.appendChild(f);
+      var w = box.clientWidth;
+      if (w) f.style.transform = "scale(" + (w / TPREV_W).toFixed(4) + ")";
+    }).catch(function () { });
+  };
+  if (!window.IntersectionObserver) { boxes.slice(0, 8).forEach(fill); return; }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { fill(e.target); io.unobserve(e.target); }
+    });
+  }, { rootMargin: "200px" });
+  boxes.forEach(function (b) { io.observe(b); });
 }
 
 /* 학생: 내 비밀번호 바꾸기 */
