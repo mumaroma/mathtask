@@ -2,6 +2,58 @@
    학생 화면 — 입장, 과제 열기, 제출, 내 이력
    ============================================================ */
 
+/* ── 과제 카드 아이콘 ──────────────────────────────────────
+   제목에 담긴 말을 보고 어울리는 그림과 색을 고릅니다.
+   맞는 말이 없으면 기본 그림(반짝임)이 쓰입니다. */
+var TI = function (d) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
+};
+
+var TASK_ICONS = {
+  graph:  TI('<path d="M4 20V4M4 20h16"/><path d="M7 16c3 0 3-8 6-8s4 5 7 5"/>'),
+  shape:  TI('<path d="M8 3l5 8H3z"/><rect x="12.5" y="13" width="7.5" height="7.5" rx="1.2"/>'),
+  dice:   TI('<rect x="4" y="4" width="16" height="16" rx="3.5"/><circle cx="9" cy="9" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="15" r="1.2" fill="currentColor" stroke="none"/>'),
+  bar:    TI('<path d="M3 20h18"/><path d="M6.5 20v-6M12 20V6M17.5 20v-9"/>'),
+  tile:   TI('<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.2"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.2"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.2"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.2"/>'),
+  num:    TI('<path d="M3 12h18"/><path d="M7 9.5v5M12 9.5v5M17 9.5v5"/><circle cx="15" cy="12" r="2.3" fill="currentColor" stroke="none"/>'),
+  game:   TI('<path d="M12 3.2l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-2.9-5.4 2.9 1.2-6L3.3 9.6l6.1-.8z"/>'),
+  motion: TI('<path d="M3 16h3.5l2.5-9 4 13 2.5-7H21"/>'),
+  eq:     TI('<circle cx="12" cy="12" r="8.6"/><path d="M8 10.3h8M8 13.7h8"/>'),
+  spark:  TI('<path d="M12 3.6l1.9 5.3 5.3 1.9-5.3 1.9L12 18l-1.9-5.3L4.8 10.8l5.3-1.9z"/><path d="M18.5 16.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>')
+};
+
+var TASK_RULES = [
+  [/함수|그래프|좌표|기울기|절편|포물선|비례/, "graph"],
+  [/도형|삼각형|사각형|다각형|원|각도|넓이|부피|합동|닮음|피타고라스|작도|대칭|입체/, "shape"],
+  [/확률|주사위|경우의|순열|조합|동전/, "dice"],
+  [/통계|자료|평균|표준편차|산점도|도수|상관|분포|히스토/, "bar"],
+  [/인수분해|전개|곱셈공식|다항식|타일|완전제곱|항등식|식의|문자와/, "tile"],
+  [/제곱근|무리수|유리수|정수|소수|지수|근호|수의|실수|분수/, "num"],
+  [/게임|야구|퀴즈|퍼즐|놀이|미션|챌린지|탐험|보물/, "game"],
+  [/속력|운동|시간|거리|변화|움직|자취|속도|가속/, "motion"],
+  [/방정식|부등식|연립|해를|미지수/, "eq"]
+];
+
+var TASK_COLORS = [
+  ["#FFF1DA", "#A8541E"], ["#E2F4EC", "#0F6E56"], ["#E6EFFA", "#1B4965"],
+  ["#FBE9EF", "#993556"], ["#F0EBFA", "#534AB7"], ["#EEF3E1", "#3B6D11"]
+];
+
+function taskIcon(title) {
+  var t = String(title || "");
+  for (var i = 0; i < TASK_RULES.length; i++) {
+    if (TASK_RULES[i][0].test(t)) return TASK_ICONS[TASK_RULES[i][1]];
+  }
+  return TASK_ICONS.spark;
+}
+
+function taskColor(title) {
+  var t = String(title || ""), h = 0;
+  for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 100000;
+  return TASK_COLORS[h % TASK_COLORS.length];
+}
+
 /* ── 학생 ───────────────────────────────────────────────── */
 function studentEnter(code) {
   render('<div class="card"><div class="empty">과제 공간을 찾는 중…</div></div>');
@@ -75,12 +127,13 @@ function studentGate() {
 function studentApps() {
   if (ST.msgFn) { window.removeEventListener("message", ST.msgFn); ST.msgFn = null; }
   if (ST.saveFn) { window.removeEventListener("message", ST.saveFn); ST.saveFn = null; }
+  if (ST.scoreFn) { window.removeEventListener("message", ST.scoreFn); ST.scoreFn = null; }
   if (typeof liveClose === "function") liveClose();
   render('<div class="card"><div class="empty">과제를 불러오는 중…</div></div>');
   sb.rpc("space_apps", { c: ST.space.code }).then(function (r) {
     ST.apps = sortApps(r.data || []);
     render(
-      '<div class="between"><span class="m">' + esc(ST.space.title) + '</span>' +
+      '<div class="between"><span class="spacename">' + esc(ST.space.title) + '</span>' +
         (ST.studentId
           ? '<span class="row" style="gap:8px;align-items:center">' +
             '<span class="m">' + esc(ST.student) + '</span>' +
@@ -89,19 +142,24 @@ function studentApps() {
             '<button class="btn-d" id="leave">나가기</button></span>'
           : '<span class="m">공개용</span>') + '</div>' +
       (ST.space.mode === "live" ? '<div class="banner livebanner">실시간 수업(Beta): 과제를 여는 동안 내 활동 상태가 선생님 화면에 실시간으로 보입니다.</div>' : '') +
-      '<div class="card"><h2>과제 목록</h2><p class="hint">과제를 골라 여세요.</p>' +
+      '<div class="card"><h2>과제 목록</h2><p class="hint">하고 싶은 과제를 눌러 보세요.</p>' +
       (ST.apps.length
         ? (function () {
             var n = 0, gs = groupByFolder(ST.apps);
             var one = gs.length === 1 && gs[0].plain;
             return gs.map(function (g, gi) {
-              var body = g.rows.map(function (a) {
+              var body = '<div class="taskgrid">' + g.rows.map(function (a) {
                 n++;
-                return '<div class="item"><span class="num">' + String(n).padStart(2, "0") + '</span>' +
-                  '<div class="grow"><div class="t">' + esc(a.title) + '</div>' +
-                  (a.note ? '<div class="note">' + esc(a.note) + '</div>' : '') + '</div>' +
-                  '<button class="btn-p open" data-id="' + a.id + '">열기</button></div>';
-              }).join("");
+                var c = taskColor(a.title);
+                return '<button class="taskcard open" data-id="' + a.id + '" ' +
+                  'style="--tbg:' + c[0] + ';--tc:' + c[1] + '">' +
+                  '<span class="tnum">' + String(n).padStart(2, "0") + '</span>' +
+                  '<span class="tico">' + taskIcon(a.title) + '</span>' +
+                  '<span class="ttitle">' + esc(a.title) +
+                    (a.scored ? '<span class="scoretag">순위</span>' : '') + '</span>' +
+                  (a.note ? '<span class="tnote">' + esc(a.note) + '</span>' : '') +
+                  '</button>';
+              }).join("") + '</div>';
               if (one) return body;
               return '<button class="ftog" data-i="' + gi + '"><span>▾ ' + esc(g.label) + '</span>' +
                 '<b>' + g.rows.length + '개</b></button>' +
@@ -287,6 +345,7 @@ function studentOpen(id) {
     wireHtmlSend(a);
     listenTaskSubmit(a);
     listenTaskSave(a);
+    listenTaskScore(a);
     if (typeof liveStudentStart === "function") liveStudentStart(a);
   });
 }
@@ -395,6 +454,57 @@ function listenTaskSave(appRow) {
     }
   };
   window.addEventListener("message", ST.saveFn);
+}
+
+/* ── 순위 과제: 점수 받기 ─────────────────────────────────
+   과제 → 부모 : { type: "mathtaskScore", score: 120, detail: {...} }
+   부모 → 과제 : { type: "mathtaskScoreResult", ok, total, rank, of }
+   과제 → 부모 : { type: "mathtaskBoard" }
+   부모 → 과제 : { type: "mathtaskBoardResult", rows: [{ name, total }] }  */
+function listenTaskScore(appRow) {
+  if (ST.scoreFn) window.removeEventListener("message", ST.scoreFn);
+  ST.scoreFn = function (e) {
+    var fr = app.querySelector("#holder iframe");
+    if (!fr || e.source !== fr.contentWindow) return;
+    var d = e.data; if (!d) return;
+    var reply = function (msg) { try { fr.contentWindow.postMessage(msg, "*"); } catch (x) { } };
+
+    if (d.type === "mathtaskScore") {
+      if (!ST.studentId) return reply({ type: "mathtaskScoreResult", ok: false, reason: "이름으로 들어와야 점수가 쌓입니다" });
+      var sc = Math.round(Number(d.score));
+      if (!isFinite(sc)) return reply({ type: "mathtaskScoreResult", ok: false, reason: "점수가 숫자가 아닙니다" });
+      var det = null;
+      if (d.detail !== undefined && d.detail !== null) {
+        try { det = JSON.parse(JSON.stringify(d.detail)); } catch (x) { det = null; }
+        if (det && JSON.stringify(det).length > 4000) det = null;
+      }
+      sb.rpc("score_submit", { tok: ST.studentId, p_app: appRow.id, p_score: sc, p_detail: det })
+        .then(function (r) {
+          if (r.error) {
+            var m = r.error.message || "";
+            var why = m.indexOf("NOTSCORED") >= 0 ? "점수를 모으지 않는 과제입니다"
+                    : m.indexOf("TOOFAST") >= 0 ? "점수를 너무 빨리 보냈습니다"
+                    : "점수를 저장하지 못했습니다";
+            return reply({ type: "mathtaskScoreResult", ok: false, reason: why });
+          }
+          var v = (r.data || [])[0] || {};
+          reply({ type: "mathtaskScoreResult", ok: true,
+            total: Number(v.out_total || 0), rank: v.out_rank || null, of: v.out_of || null });
+        });
+      return;
+    }
+
+    if (d.type === "mathtaskBoard") {
+      sb.rpc("score_board", { c: ST.space.code, p_app: appRow.id, p_limit: 20 }).then(function (r) {
+        var rows = (r.data || []).map(function (x) {
+          return { rank: x.out_rank, name: x.out_name, total: Number(x.out_total), tries: x.out_tries,
+            me: ST.studentId && x.out_sid === ST.studentId };
+        });
+        reply({ type: "mathtaskBoardResult", rows: rows });
+      });
+    }
+  };
+  window.addEventListener("message", ST.scoreFn);
 }
 
 /* 그림·문서 등 파일 그대로 보내기 */

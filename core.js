@@ -111,7 +111,8 @@ var ICON = {
   copy:   SV('<path d="M9 9h10v10H9zM5 15V5h10"/>'),
   eye:    SV('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>'),
   clock:  SV('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
-  check:  SV('<path d="M5 13l4 4L19 7"/>')
+  check:  SV('<path d="M5 13l4 4L19 7"/>'),
+  trophy: SV('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 5H5v2a3 3 0 0 0 3 3M16 5h3v2a3 3 0 0 1-3 3"/><path d="M12 13v4M9 20h6M10 17h4"/>')
 };
 
 /* 공간 유형 이름표: open(공개용) · class(수업용) · live(실시간 수업용 Beta) */

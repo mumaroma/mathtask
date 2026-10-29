@@ -480,6 +480,7 @@ function viewDash() {
         '<button class="tab' + (ST.tab === "log" ? " on" : "") + '" data-tab="log">접속 기록</button>' +
         '<button class="tab' + (ST.tab === "sub" ? " on" : "") + '" data-tab="sub">제출 결과</button>' +
         '<button class="tab' + (ST.tab === "stu" ? " on" : "") + '" data-tab="stu">학생 명단</button>' +
+        '<button class="tab' + (ST.tab === "score" ? " on" : "") + '" data-tab="score">순위</button>' +
         (sp.mode === "live" ? '<button class="tab' + (ST.tab === "live" ? " on" : "") + '" data-tab="live">실시간 <span class="modetag live" style="margin-left:4px">Beta</span></button>' : '')) +
       (sp.owner === ST.user.id
         ? '<button class="tab' + (ST.tab === "mem" ? " on" : "") + '" data-tab="mem">함께 관리</button>'
@@ -524,6 +525,7 @@ function viewDash() {
   else if (ST.tab === "log") panelLog();
   else if (ST.tab === "mem") panelMembers();
   else if (ST.tab === "stu") panelStudents();
+  else if (ST.tab === "score") panelScore();
   else panelSubs();
 }
 
@@ -597,6 +599,13 @@ var HELP = {
     "TV 모드는 윗부분을 숨기고 카드만 크게 보여 줍니다. TV 에 연결한 컴퓨터에서 켜 두세요.",
     "과제 HTML 에 sim:state / sim:apply 규약(getState·setState)이 들어 있어야 상태가 전달됩니다. 규약이 없는 과제는 접속 여부만 보입니다. 별도 프로그램이나 스킬 설치는 필요 없고, 과제를 만들 때 AI 에게 붙여 넣는 안내문이 실시간 탭 위쪽 '실시간 규약' 상자에 있습니다(복사·텍스트 파일 받기)."
   ]],
+  score: ["순위", [
+    "순위 과제로 켜 둔 과제에서 학생이 보낸 점수가 모입니다.",
+    "위쪽 선택 상자로 과제 하나만 보거나, 순위 과제 전체를 합산해 볼 수 있습니다.",
+    "집계 방식은 과제마다 정합니다. 합계는 할 때마다 쌓이고, 최고 점수는 가장 잘한 한 판만, 마지막 점수는 가장 최근 한 판만 봅니다.",
+    "교실에서 화면에 띄우실 때는 이름 숨기기를 켜면 등수만 보입니다.",
+    "점수는 학생 기기에서 오므로 완전히 막을 수는 없습니다. 성적에 쓰실 때는 제출 결과와 함께 보세요."
+  ]],
   mem: ["함께 관리", [
     "상대 선생님이 구글 로그인에 쓰는 이메일로 초대합니다. 메일이 자동으로 가지는 않으니 직접 알려 주세요.",
     "초대받은 선생님은 과제를 올리고 자기가 올린 과제를 고칠 수 있으며, 접속 기록과 제출 결과도 봅니다.",
@@ -660,7 +669,7 @@ function canEditApp(a) { return !isViewer() && (isOwner() || (a && a.created_by 
 
 var GROUPS = [];
 function panelApps() {
-  sb.from("apps").select("id,title,created_at,folder,position,note,created_by,hidden").eq("space_code", ST.space.code)
+  sb.from("apps").select("id,title,created_at,folder,position,note,created_by,hidden,scored,score_rule").eq("space_code", ST.space.code)
     .order("created_at").then(function (r) {
       ST.apps = sortApps(r.data || []);
       var n = 0;
@@ -687,7 +696,8 @@ function panelApps() {
                         '<button class="iconbtn danger del" data-id="' + a.id + '" ' +
                           'title="삭제" aria-label="삭제">' + ICON.trash + '</button>'
                       : '<span class="lockmark" title="다른 선생님이 올린 과제입니다">읽기 전용</span>') +
-                    (a.hidden ? '<span class="lockmark">숨김</span>' : '') + '</div>' +
+                    (a.hidden ? '<span class="lockmark">숨김</span>' : '') +
+                    (a.scored ? '<span class="scoretag">순위 · ' + scoreRuleName(a.score_rule) + '</span>' : '') + '</div>' +
                   (a.note ? '<div class="note">' + esc(a.note) + '</div>' : '') +
                   '<div class="m">' + fmt(a.created_at) + ' 등록</div></div>' +
                   '<span class="menuwrap">' +
@@ -697,6 +707,9 @@ function panelApps() {
                       (canEditApp(a)
                         ? '<button class="mi hide" data-id="' + a.id + '" data-h="' + (a.hidden ? "1" : "") + '">' +
                             ICON.eye + (a.hidden ? '학생에게 보이기' : '학생에게 숨기기') + '</button>' +
+                          '<button class="mi score" data-id="' + a.id + '" data-s="' + (a.scored ? "1" : "") +
+                            '" data-r="' + esc(a.score_rule || "sum") + '" data-t="' + esc(a.title) + '">' +
+                            ICON.trophy + (a.scored ? '점수 설정 바꾸기' : '순위 과제로 만들기') + '</button>' +
                           '<button class="mi vers" data-id="' + a.id + '" data-t="' + esc(a.title) + '">' +
                             ICON.clock + '이전 버전' + '</button>'
                         : '') +
@@ -730,10 +743,11 @@ function panelApps() {
           '<div class="row"><button class="btn-s" id="pickfile">.html 파일 고르기</button>' +
           '<button class="btn-p" id="addapp">과제 추가</button></div>' +
           '<input type="file" id="hfile" accept=".html,.htm,text/html" style="display:none">' +
-          '<div class="err" id="err" style="margin-top:10px"></div></div>') +
+          '<div class="err" id="err" style="margin-top:10px"></div></div>' + scoreGuideHtml()) +
         '<div id="modal"></div>';
 
       wireFolderSelect("afolder", "anewf");
+      wireScoreGuide();
       on("#pickfile", "click", function () { $("#hfile").click(); });
       on("#hfile", "change", function (e) {
         var f = e.target.files[0]; if (!f) return;
@@ -831,6 +845,10 @@ function panelApps() {
         });
       });
 
+      app.querySelectorAll(".score").forEach(function (b) {
+        b.addEventListener("click", function () { scoreSetup(b.dataset.id, b.dataset.t, b.dataset.s, b.dataset.r); });
+      });
+
       app.querySelectorAll(".vers").forEach(function (b) {
         b.addEventListener("click", function () { showVersions(b.dataset.id, b.dataset.t); });
       });
@@ -874,6 +892,166 @@ function panelApps() {
 }
 
 /* 이전 버전 보기 · 되돌리기 (7일 보관) */
+/* ============================================================
+   순위 과제 — 점수 설정, 안내문, 순위표
+   ============================================================ */
+
+function scoreRuleName(r) {
+  return r === "best" ? "최고 점수" : (r === "last" ? "마지막 점수" : "합계");
+}
+
+/* 과제 HTML 에 붙여 넣을 코드 — 과제를 만들 때 AI 에게 그대로 주면 됩니다 */
+var SCORE_PROMPT = [
+  "이 HTML 과제 앱에 '순위 집계' 규약을 넣어 주세요. 앱은 점수가 확정될 때마다 부모 창(iframe 바깥)으로 점수를 보내고, 돌려받은 내 누적 점수와 등수를 화면에 보여 줍니다.",
+  "",
+  "아래 코드를 그대로 넣으세요:",
+  "",
+  "/* ── 점수 보내기 ────────────────────────────────── */",
+  "let myTotal = 0, myRank = null, ofN = null;",
+  "",
+  "function sendScore(score, detail) {",
+  "  if (window.parent === window) return;        // 혼자 열어 봤을 때는 그냥 넘어감",
+  "  window.parent.postMessage({",
+  "    type: 'mathtaskScore',",
+  "    score: Math.round(score),                  // 숫자 하나",
+  "    detail: detail || null                     // 선택: { 단계: 3, 걸린시간: 95 } 같은 기록",
+  "  }, '*');",
+  "}",
+  "",
+  "window.addEventListener('message', (e) => {",
+  "  const d = e.data;",
+  "  if (!d) return;",
+  "  if (d.type === 'mathtaskScoreResult') {      // 저장 결과 + 내 누적·등수",
+  "    if (!d.ok) { console.log(d.reason); return; }",
+  "    myTotal = d.total; myRank = d.rank; ofN = d.of;",
+  "    showRank();                                // 화면에 표시하는 함수 (아래)",
+  "  }",
+  "  if (d.type === 'mathtaskBoardResult') {      // 순위표 (요청했을 때만 옴)",
+  "    drawBoard(d.rows);                         // rows = [{ rank, name, total, me }, …]",
+  "  }",
+  "});",
+  "",
+  "function askBoard() {                          // 과제 안에 순위표를 그리고 싶을 때만",
+  "  if (window.parent !== window) window.parent.postMessage({ type: 'mathtaskBoard' }, '*');",
+  "}",
+  "",
+  "function showRank() {",
+  "  const el = document.getElementById('rank');",
+  "  if (el) el.textContent = myRank ? `내 점수 ${myTotal}점 · ${ofN}명 중 ${myRank}등` : `내 점수 ${myTotal}점`;",
+  "}",
+  "",
+  "지켜 주세요:",
+  "1. sendScore() 는 점수가 확정되는 순간에만 부릅니다(한 판이 끝났을 때, 문제를 맞혔을 때). 드래그 중이나 매 프레임마다 부르면 안 됩니다.",
+  "2. score 는 정수 하나로 보냅니다. 시간이 기준이면 '빠를수록 높은 점수'로 미리 환산하세요(예: 1000 - 걸린초 * 5). 원래 기록은 detail 에 넣습니다.",
+  "3. 화면 어딘가에 <div id=\"rank\"></div> 를 두어 내 점수와 등수가 보이게 합니다.",
+  "4. 순위표를 과제 안에 그리려면 askBoard() 를 부르고 drawBoard(rows) 를 직접 만드세요. 안 만들어도 됩니다.",
+  "5. window.parent === window 검사는 꼭 남겨 두세요. 파일을 직접 열어 볼 때 오류 없이 작동해야 합니다.",
+  "",
+  "주의: 외부 라이브러리 없이 한 파일(HTML+CSS+JS)로 만들고, 배경은 흰색, 마우스와 터치 모두 지원하세요."
+].join("\n");
+
+function scoreGuideHtml() {
+  return '<details class="liveproto"><summary>순위 앱을 만드는 경우 — 과제 HTML 에 넣을 코드</summary>' +
+    '<p class="hint">점수를 모으는 과제는 HTML 안에 아래 코드가 있어야 합니다. ' +
+    '과제를 만들 때(클로드·GPT 등) 이 안내문을 그대로 붙여 넣으시고, 이미 만든 과제는 HTML 과 함께 주면서 ' +
+    '"순위 규약을 추가해 줘"라고 하면 됩니다. 올린 뒤에는 과제 ⋯ 메뉴에서 <b>순위 과제로 만들기</b>를 켜 주세요.</p>' +
+    '<div class="row" style="margin-bottom:8px"><button class="btn-s" id="scCopy">안내문 복사</button>' +
+    '<button class="btn-s" id="scDl">텍스트 파일로 받기</button></div>' +
+    '<textarea id="scBox" readonly style="width:100%;height:220px;font-family:var(--mono);font-size:12px"></textarea></details>';
+}
+
+function wireScoreGuide() {
+  var box = $("#scBox"); if (!box) return;
+  box.value = SCORE_PROMPT;
+  on("#scCopy", "click", function (e) { copy(SCORE_PROMPT, e.target); });
+  on("#scDl", "click", function () {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([SCORE_PROMPT], { type: "text/plain;charset=utf-8" }));
+    a.download = "순위과제_규약_안내문.txt"; a.click();
+  });
+}
+
+/* 과제를 순위 과제로 켜고 끄기 */
+function scoreSetup(id, title, isOn, rule) {
+  $("#modal").innerHTML =
+    '<div class="modal"><div class="mbox"><div class="pickbox">' +
+    '<h2>순위 과제 설정 — ' + esc(title) + '</h2>' +
+    '<p class="hint">켜면 학생이 보낸 점수가 쌓이고 순위 탭에 집계됩니다. ' +
+    '과제 HTML 안에 점수 보내는 코드가 들어 있어야 합니다.</p>' +
+    '<label class="dl" style="margin-bottom:12px"><input type="checkbox" id="scOn"' +
+      (isOn ? ' checked' : '') + '> 이 과제의 점수를 모읍니다</label>' +
+    '<label>어떻게 집계할까요</label>' +
+    '<select id="scRule">' +
+      '<option value="sum">합계 — 할 때마다 점수가 쌓입니다</option>' +
+      '<option value="best">최고 점수 — 가장 잘한 한 판만 봅니다</option>' +
+      '<option value="last">마지막 점수 — 가장 최근 한 판만 봅니다</option>' +
+    '</select>' +
+    '<div class="err" id="err"></div>' +
+    '<div class="row"><button class="btn-p" id="scOk">저장</button>' +
+    '<button class="btn-s" id="scCancel">취소</button></div></div></div></div>';
+  $("#scRule").value = rule || "sum";
+  on("#scCancel", "click", function () { $("#modal").innerHTML = ""; });
+  on("#scOk", "click", function () {
+    var btn = $("#scOk"); btn.disabled = true;
+    sb.from("apps").update({ scored: $("#scOn").checked, score_rule: $("#scRule").value })
+      .eq("id", id).then(function (r) {
+        btn.disabled = false;
+        if (r.error) return setErr("저장하지 못했습니다: " + r.error.message);
+        $("#modal").innerHTML = "";
+        panelApps();
+      });
+  });
+}
+
+/* ── 순위 탭 ───────────────────────────────────────────── */
+function panelScore() {
+  var scored = (ST.scoredApps || []);
+  var pick = ST.scoreApp || "";
+  var load = function () {
+    sb.rpc("score_board", { c: ST.space.code, p_app: pick || null, p_limit: 100 }).then(function (r) {
+      var rows = r.data || [];
+      var box = $("#scboard"); if (!box) return;
+      box.innerHTML = rows.length
+        ? '<div class="mwrap"><table class="matrix"><thead><tr><th>등수</th><th>이름</th><th>점수</th><th>횟수</th></tr></thead><tbody>' +
+          rows.map(function (x) {
+            return '<tr><td class="' + (x.out_rank <= 3 ? "yes" : "") + '">' + x.out_rank + '</td>' +
+              '<th class="nm">' + (ST.scoreHide ? "학생 " + x.out_rank : esc(x.out_name)) + '</th>' +
+              '<td class="sum">' + Number(x.out_total).toLocaleString() + '</td>' +
+              '<td>' + x.out_tries + '</td></tr>';
+          }).join("") + '</tbody></table></div>'
+        : '<div class="empty">아직 들어온 점수가 없습니다.</div>';
+    });
+  };
+
+  sb.from("apps").select("id,title,scored,score_rule").eq("space_code", ST.space.code)
+    .eq("scored", true).order("position").then(function (r) {
+      ST.scoredApps = scored = r.data || [];
+      $("#panel").innerHTML =
+        '<div class="card"><div class="between" style="margin-bottom:8px">' +
+          '<h2 style="margin:0">순위</h2>' +
+          '<span class="row" style="gap:8px;align-items:center">' +
+          '<select id="scPick" style="width:auto;margin:0;font-size:13px;padding:6px 9px">' +
+            '<option value="">모든 순위 과제 합산</option>' +
+            scored.map(function (a) {
+              return '<option value="' + a.id + '"' + (pick === a.id ? " selected" : "") + '>' +
+                esc(a.title) + ' · ' + scoreRuleName(a.score_rule) + '</option>';
+            }).join("") +
+          '</select>' +
+          '<label class="dl" style="font-size:12px;margin:0"><input type="checkbox" id="scHide"' +
+            (ST.scoreHide ? ' checked' : '') + '> 이름 숨기기</label>' +
+          '<button class="btn-s" id="scRefresh">새로고침</button></span></div>' +
+        (scored.length
+          ? '<p class="hint">학생이 과제에서 보낸 점수입니다. 과제를 순위 과제로 켜 두어야 쌓입니다.</p>'
+          : '<div class="banner">아직 순위 과제가 없습니다. 과제 앱 탭에서 ⋯ 메뉴의 <b>순위 과제로 만들기</b>를 켜 주세요.</div>') +
+        '<div id="scboard"><div class="empty">불러오는 중…</div></div></div>';
+
+      on("#scPick", "change", function () { ST.scoreApp = pick = $("#scPick").value; load(); });
+      on("#scHide", "change", function () { ST.scoreHide = $("#scHide").checked; load(); });
+      on("#scRefresh", "click", load);
+      load();
+    });
+}
+
 function showVersions(id, title) {
   sb.from("app_versions").select("id,title,saved_at").eq("app_id", id)
     .order("saved_at", { ascending: false }).limit(30).then(function (r) {
