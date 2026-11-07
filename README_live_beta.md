@@ -25,6 +25,12 @@
 - 떼어 낸 동안에는 학생의 '내 화면이 TV에 공유되고 있습니다' 배너를 내립니다(따라보는 중이 아니므로).
 - 모니터의 작은 카드들은 그대로 보기 전용이고, 떼어 낸 학생 카드는 테두리가 점선이 됩니다.
 
+## 규약 안내문이 보이는 곳
+- 실시간 탭 위쪽 '실시간 수업 규약' 토글
+- 과제 앱 탭 → 과제 추가 아래 (순위 규약 토글과 나란히)
+- 공간 만들기 / 유형 바꾸기 화면의 안내 상자
+순위 규약 토글은 과제 추가 아래와 순위 탭 아래 두 곳에 있습니다.
+
 ## 과제 HTML 규약
 - 조작할 때: parent.postMessage({ type: 'sim:state', state: getState(), mode: window.curMode }, '*')
 - 받을 때:  window.addEventListener('message', e => { if (e.data?.type === 'sim:apply') setState(e.data.state); })

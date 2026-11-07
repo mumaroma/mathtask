@@ -478,10 +478,10 @@ function viewDash() {
       '<button class="tab' + (ST.tab === "apps" ? " on" : "") + '" data-tab="apps">과제 앱</button>' +
       (sp.mode === "open" || isViewer() ? '' :
         '<button class="tab' + (ST.tab === "log" ? " on" : "") + '" data-tab="log">접속 기록</button>' +
+        (sp.mode === "live" ? '<button class="tab' + (ST.tab === "live" ? " on" : "") + '" data-tab="live">실시간 <span class="modetag live" style="margin-left:4px">Beta</span></button>' : '') +
         '<button class="tab' + (ST.tab === "sub" ? " on" : "") + '" data-tab="sub">제출 결과</button>' +
         '<button class="tab' + (ST.tab === "stu" ? " on" : "") + '" data-tab="stu">학생 명단</button>' +
-        '<button class="tab' + (ST.tab === "score" ? " on" : "") + '" data-tab="score">순위</button>' +
-        (sp.mode === "live" ? '<button class="tab' + (ST.tab === "live" ? " on" : "") + '" data-tab="live">실시간 <span class="modetag live" style="margin-left:4px">Beta</span></button>' : '')) +
+        '<button class="tab' + (ST.tab === "score" ? " on" : "") + '" data-tab="score">순위</button>') +
       (sp.owner === ST.user.id
         ? '<button class="tab' + (ST.tab === "mem" ? " on" : "") + '" data-tab="mem">함께 관리</button>'
         : '') +
@@ -744,11 +744,11 @@ function panelApps() {
           '<button class="btn-p" id="addapp">과제 추가</button>' +
           '<span class="m" id="hname"></span></div>' +
           '<input type="file" id="hfile" accept=".html,.htm,text/html" style="display:none">' +
-          '<div class="err" id="err" style="margin-top:10px"></div></div>' + scoreGuideHtml()) +
+          '<div class="err" id="err" style="margin-top:10px"></div></div>' + scoreGuideHtml() + liveGuide()) +
         '<div id="modal"></div>';
 
       wireFolderSelect("afolder", "anewf");
-      wireScoreGuide();
+      wireScoreGuide(); wireLiveGuide();
       on("#pickfile", "click", function () { $("#hfile").click(); });
       ST.pendingHtml = null;
       on("#hfile", "change", function (e) {
@@ -961,6 +961,10 @@ var SCORE_PROMPT = [
   "주의: 외부 라이브러리 없이 한 파일(HTML+CSS+JS)로 만들고, 배경은 흰색, 마우스와 터치 모두 지원하세요."
 ].join("\n");
 
+/* live.js 가 없을 때도 teacher.js 가 멈추지 않도록 감싸 둡니다 */
+function liveGuide() { return typeof liveGuideHtml === "function" ? liveGuideHtml() : ""; }
+function wireLiveGuide() { if (typeof liveWireGuide === "function") liveWireGuide(); }
+
 function scoreGuideHtml() {
   return '<details class="liveproto"><summary>순위 앱을 만드는 경우 — 과제 HTML 에 넣을 코드</summary>' +
     '<p class="hint">점수를 모으는 과제는 HTML 안에 아래 코드가 있어야 합니다. ' +
@@ -1054,8 +1058,9 @@ function panelScore() {
         (scored.length
           ? '<p class="hint">학생이 과제에서 보낸 점수입니다. 과제를 순위 과제로 켜 두어야 쌓입니다.</p>'
           : '<div class="banner">아직 순위 과제가 없습니다. 과제 앱 탭에서 ⋯ 메뉴의 <b>순위 과제로 만들기</b>를 켜 주세요.</div>') +
-        '<div id="scboard"><div class="empty">불러오는 중…</div></div></div>';
+        '<div id="scboard"><div class="empty">불러오는 중…</div></div></div>' + scoreGuideHtml();
 
+      wireScoreGuide();
       on("#scPick", "change", function () { ST.scoreApp = pick = $("#scPick").value; load(); });
       on("#scHide", "change", function () { ST.scoreHide = $("#scHide").checked; load(); });
       on("#scRefresh", "click", load);

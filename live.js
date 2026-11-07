@@ -11,32 +11,46 @@
 
 /* 과제 HTML 을 만들 때 AI(클로드 등)에게 붙여 넣는 안내문. 이 규약이 있어야 실시간 모니터에 화면이 재현됩니다. */
 var LIVE_PROMPT = [
-  "이 HTML 과제 앱에 '실시간 수업' 규약을 넣어 주세요. 앱은 부모 창(iframe 바깥)에 자기 상태를 보내고, 부모가 보내는 상태를 받아 복원할 수 있어야 합니다. 조건은 다음과 같습니다.",
+  "이 HTML 과제 앱에 '실시간 수업' 규약을 넣어 주세요. 선생님 화면에서는 같은 HTML 이 하나 더 실행되고 거기에 학생의 상태만 들어갑니다. 앱은 부모 창(iframe 바깥)에 자기 상태를 보내고, 부모가 보내는 상태를 받아 복원할 수 있어야 합니다. 조건은 다음과 같습니다.",
   "",
-  "1. window.getState() : 지금 화면을 다시 그리는 데 필요한 모든 값(점·선·원의 좌표, 선택한 문제 번호, 입력값, 체크 상태 등)을 하나의 JSON 객체로 돌려줍니다. 작게 유지하세요(화면 이미지가 아니라 숫자와 짧은 문자열만).",
+  "1. window.getState() : 지금 화면을 다시 그리는 데 필요한 모든 값(점·선·원의 좌표, 선택한 문제 번호, 입력값, 체크 상태 등)을 하나의 JSON 객체로 돌려줍니다. 작게 유지하세요(화면 이미지가 아니라 숫자와 짧은 문자열만). 되돌리기 기록처럼 다시 그리는 데 필요 없는 것은 넣지 않습니다.",
   "2. window.setState(state) : getState() 가 돌려준 객체를 받아 화면을 그 상태로 완전히 복원합니다. 다른 문제 번호면 그 문제를 먼저 불러옵니다.",
-  "3. 사용자가 조작할 때마다(드래그 중 포함) 아래 notify() 를 부릅니다. 초당 4회를 넘지 않게 묶습니다.",
+  "   중요 — 지금 화면에 무엇이 있든 상태대로 '덮어써야' 합니다. 상태에 없는 점·선·입력은 지우세요. 선생님이 자기 화면에서 이것저것 그려 본 뒤 학생 화면으로 돌아갈 때, 선생님이 만든 것이 남아 있으면 안 됩니다.",
+  "3. 사용자가 조작할 때마다(드래그 중 포함) 아래 notify() 를 부릅니다. 초당 4회를 넘지 않게 묶습니다. setState 로 복원하는 중에는 나가지 않아야 하는데, 아래 코드의 applying 플래그가 막아 줍니다.",
   "4. window.curMode 에 지금 진행 상태를 짧은 한국어 문장으로 둡니다(예: '문제2 탐구중', '문제2 성공 (3/8)'). 교사 화면에서 집계에 쓰입니다.",
   "",
   "아래 코드를 그대로 넣으세요:",
   "",
-  "let lastSent = 0, notifyTimer = null;",
+  "let lastSent = 0, notifyTimer = null, applying = false, inited = false, pendingState = null;",
   "function notify() {",
+  "  if (applying) return;",
   "  const now = Date.now();",
   "  if (now - lastSent < 250) { if (!notifyTimer) notifyTimer = setTimeout(() => { notifyTimer = null; notify(); }, 260); return; }",
   "  lastSent = now;",
   "  try { if (window.parent !== window) window.parent.postMessage({ type: 'sim:state', state: window.getState(), mode: window.curMode || '' }, '*'); } catch (e) {}",
   "}",
+  "function applyState(st) { applying = true; try { window.setState(st); } catch (e) {} finally { applying = false; } }",
   "window.addEventListener('message', (e) => {",
-  "  const d = e.data;",
-  "  if (d && d.type === 'sim:apply' && d.state) { try { window.setState(d.state); } catch (err) {} }",
+  "  const d = e.data; if (!d) return;",
+  "  if (d.type === 'sim:apply' && d.state) {",
+  "    if (!inited) { pendingState = d.state; return; }   // 초기화 전이면 보관했다가 아래 liveReady() 에서 적용",
+  "    applyState(d.state);",
+  "  }",
+  "  if (d.type === 'sim:request') notify();              // 상태를 다시 보내 달라는 요청",
   "});",
+  "// 초기화(첫 문제 불러오기·크기 잡기)가 끝나는 자리에서 반드시 불러 주세요",
+  "function liveReady() { inited = true; if (pendingState) { const st = pendingState; pendingState = null; applyState(st); } }",
   "",
-  "5. 초기화(init)가 setTimeout 등으로 늦게 끝나면, 그 전에 받은 상태는 보관했다가 init 직후 setState 로 적용하세요(교사 창에서 처음 열 때 상태가 지워지지 않게).",
+  "5. 초기화가 setTimeout 등으로 늦게 끝나더라도 먼저 받은 상태가 지워지지 않도록, 초기화가 끝나는 자리에서 꼭 liveReady() 를 부르세요.",
+  "",
+  "6. 선생님은 자기 화면에서 이 과제를 '직접 조작'할 수도 있습니다(학생 화면에는 영향이 없습니다). 그래서 교사 화면에서도 과제가 혼자 멀쩡히 돌아가야 합니다.",
+  "   · 교사 화면의 iframe 은 sandbox 라 localStorage · sessionStorage · document.cookie 가 SecurityError 로 막힙니다. 쓰지 않는 쪽이 좋고, 쓴다면 반드시 try/catch 로 감싸고 없어도 똑같이 동작하게 하세요.",
+  "   · 부모 창의 답을 기다리며 멈추지 마세요. 교사 화면에서는 답이 오지 않습니다. 저장·점수 메시지를 보냈다면 답이 없어도 1초 안에 혼자 시작해서 끝까지 쓸 수 있어야 합니다.",
+  "   · 학생 이름·점수·지난 기록이 없어도 과제 자체는 완결되어야 합니다.",
   "",
   "화면 배치: 과제(그림·조작 영역)가 화면의 대부분을 차지하고, 제목은 한 줄 얇은 막대로, 기능 설명은 <details class=\"help\"><summary>설명</summary>…</details> 처럼 작게 접힌 토글로 두세요. 조작 버튼·입력은 항상 보이게 하고 글 설명만 접습니다.",
   "",
-  "주의: 외부 라이브러리 없이 한 파일(HTML+CSS+JS)로 만들고, 배경은 흰색, 마우스와 터치 모두 지원하세요. 상태를 받았을 때(setState) 다시 notify() 를 부르지 않아도 됩니다."
+  "주의: 외부 라이브러리 없이 한 파일(HTML+CSS+JS)로 만들고, 배경은 흰색, 마우스와 터치 모두 지원하세요."
 ].join("\n");
 
 var LIVE = { ch: null, code: null, role: null, sid: null, name: null, appId: null, appTitle: null, lastSent: 0, timer: null,
@@ -148,20 +162,14 @@ function panelLive() {
       '<label class="dl" style="font-size:12px;margin:0"><input type="checkbox" id="liveHideName"> 이름 숨기기</label>' +
       '<select id="liveCols" title="한 줄에 몇 개"><option value="3">3개씩</option><option value="4" selected>4개씩</option><option value="5">5개씩</option><option value="6">6개씩</option></select>' +
       '<button class="btn-s" id="liveTV">TV 모드</button></span></div>' +
-    '<details class="liveproto"><summary>과제 HTML 에 넣을 실시간 규약 — AI 에게 붙여 넣는 안내문</summary>' +
-      '<p class="hint">과제를 만들 때(클로드·GPT 등) 이 안내문을 함께 붙여 넣으면 실시간 모니터에서 화면이 재현됩니다. 이미 만든 과제는 HTML 과 이 안내문을 같이 주고 "규약을 추가해 줘"라고 하면 됩니다.</p>' +
-      '<div class="row" style="margin-bottom:8px"><button class="btn-s" id="liveCopyPrompt">안내문 복사</button><button class="btn-s" id="liveDlPrompt">텍스트 파일로 받기</button></div>' +
-      '<textarea id="livePromptBox" readonly style="width:100%;height:200px;font-family:var(--mono);font-size:12px"></textarea></details>' +
+    liveGuideHtml() +
     '<p class="hint">학생이 과제를 열고 조작하면 그 상태가 아래 카드에 그대로 다시 그려집니다. 카드를 누르면 <b>새 창</b>에 그 학생의 작업 화면이 크게 열리고 계속 따라 바뀝니다(TV에 끌어다 놓기 좋습니다). ' +
+      '새 창의 <b>내가 해보기</b>를 누르면 그 화면을 떼어 내 선생님이 직접 조작해 볼 수 있고(학생 화면에는 영향이 없습니다), <b>학생 화면으로 돌아가기</b>로 다시 따라갑니다. ' +
       '과제 HTML 에 <code>sim:state</code> / <code>sim:apply</code> 규약이 들어 있어야 합니다.</p>' +
     '<div class="livesum" id="livesum"></div>' +
     '<div class="livegrid" id="livegrid"><div class="empty">학생이 과제를 열면 여기에 나타납니다.</div></div></div>';
   on("#liveTV", "click", function () { liveTV(!document.body.classList.contains("tvmode")); });
-  $("#livePromptBox").value = LIVE_PROMPT;
-  on("#liveCopyPrompt", "click", function (e) { copy(LIVE_PROMPT, e.target); });
-  on("#liveDlPrompt", "click", function () {
-    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([LIVE_PROMPT], { type: "text/plain;charset=utf-8" })); a.download = "실시간수업_규약_안내문.txt"; a.click();
-  });
+  liveWireGuide();
   on("#liveHideName", "change", function () { LIVE.hideName = $("#liveHideName").checked; liveRenderGrid(); });
   on("#liveCols", "change", function () { LIVE.cols = +$("#liveCols").value; liveApplyCols(); });
   on("#liveApp", "change", function () { LIVE.appFilter = $("#liveApp").value; liveRenderGrid(); liveRenderSummary(); });
@@ -189,6 +197,25 @@ function panelLive() {
   });
   ch.subscribe(function (s) { if (s === "SUBSCRIBED") ch.track({ teacher: true }); });
 
+}
+
+/* 실시간 규약 안내문 토글 — 실시간 탭과 과제 추가 화면에서 같이 씁니다 */
+function liveGuideHtml() {
+  return '<details class="liveproto"><summary>실시간 수업 규약 — 과제 HTML 에 넣을 코드</summary>' +
+    '<p class="hint">선생님 화면에 학생의 작업이 그대로 다시 그려지려면 과제 HTML 안에 아래 코드가 있어야 합니다. ' +
+    '과제를 만들 때(클로드·GPT 등) 이 안내문을 그대로 붙여 넣으시고, 이미 만든 과제는 HTML 과 함께 주면서 ' +
+    '"실시간 규약을 추가해 줘"라고 하면 됩니다.</p>' +
+    '<div class="row" style="margin-bottom:8px"><button type="button" class="btn-s" id="liveCopyPrompt">안내문 복사</button>' +
+    '<button type="button" class="btn-s" id="liveDlPrompt">텍스트 파일로 받기</button></div>' +
+    '<textarea id="livePromptBox" readonly style="width:100%;height:260px;font-family:var(--mono);font-size:12px"></textarea></details>';
+}
+function liveWireGuide() {
+  var box = document.getElementById("livePromptBox"); if (!box) return;
+  box.value = LIVE_PROMPT;
+  on("#liveCopyPrompt", "click", function (e) { copy(LIVE_PROMPT, e.target); });
+  on("#liveDlPrompt", "click", function () {
+    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([LIVE_PROMPT], { type: "text/plain;charset=utf-8" })); a.download = "실시간수업_규약_안내문.txt"; a.click();
+  });
 }
 
 /* 실시간 수업용 안내문 — 공간 만들기/유형 바꾸기 화면에서 씀 */
