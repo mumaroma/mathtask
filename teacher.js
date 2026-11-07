@@ -266,7 +266,9 @@ function viewLibrary() {
       lf.sort(function (a, b) { return a.localeCompare(b, "ko"); });
 
       var groups = [];
-      if (by === "folder") {
+      if (by === "all") {
+        /* 묶지 않고 최근 올린 순서 그대로 */
+      } else if (by === "folder") {
         var map = {}, plain = [];
         all.forEach(function (a) {
           var f = (a.lib_folder || "").trim();
@@ -284,6 +286,38 @@ function viewLibrary() {
         });
       }
 
+      ST.libOpen = ST.libOpen || {};
+      var cardHtml = function (a) {
+        return '<div class="libcard">' +
+          '<span class="menuwrap libmenu">' +
+            '<button class="btn-s dots" data-m="l' + a.id + '" aria-label="더 보기">⋯</button>' +
+            '<div class="menu" id="ml' + a.id + '" hidden>' +
+              '<button class="mi prev" data-id="' + a.id + '">' + ICON.play + '크게 보기</button>' +
+              '<button class="mi cpto" data-id="' + a.id + '" data-t="' + esc(a.title) + '">' + ICON.copy + '공간에 넣기</button>' +
+              '<button class="mi lfold" data-id="' + a.id + '" data-f="' + esc(a.lib_folder || "") + '">' + ICON.folder + '분류 바꾸기</button>' +
+              '<button class="mi code" data-id="' + a.id + '">' + ICON.code + 'HTML 코드 보기</button>' +
+            '</div></span>' +
+          '<div class="libthumb prev" data-id="' + a.id + '" data-lazy="' + a.id + '">' +
+            '<span class="tph">' + esc(a.title.slice(0, 1)) + '</span></div>' +
+          '<div class="libcap"><b class="prev" data-id="' + a.id + '">' + esc(a.title) + '</b>' +
+          '<i>' + (by === "folder" ? esc(names[a.space_code] || a.space_code)
+                 : by === "all" ? esc((names[a.space_code] || a.space_code) + (a.lib_folder ? " · " + a.lib_folder : ""))
+                 : (a.lib_folder ? esc(a.lib_folder) : "분류 없음")) + '</i>' +
+          '<i>' + fmt(a.created_at) + '</i></div></div>';
+      };
+      var groupsHtml = function () {
+        if (by === "all") return '<div class="libgrid">' + all.map(cardHtml).join("") + '</div>';
+        return '<div class="row" style="gap:8px;margin:0 0 10px">' +
+            '<button class="btn-s" id="libOpenAll">모두 펼치기</button>' +
+            '<button class="btn-s" id="libShutAll">모두 접기</button></div>' +
+          groups.map(function (g) {
+            var k = by + "|" + g.label;
+            return '<details class="libfold" data-k="' + esc(k) + '"' + (ST.libOpen[k] ? " open" : "") + '>' +
+              '<summary><span class="dl">' + esc(g.label) + '</span><b>' + g.rows.length + '개</b></summary>' +
+              '<div class="libgrid">' + g.rows.map(cardHtml).join("") + '</div></details>';
+          }).join("");
+      };
+
       render(
         '<div class="between"><button class="btn-s" id="back">← 내 공간 목록</button>' +
           '<span class="row" style="gap:8px;align-items:center">' + helpBtn("lib") +
@@ -293,29 +327,10 @@ function viewLibrary() {
         '<div class="filters">' +
           '<button class="btn-s' + (by === "space" ? " on" : "") + '" id="bySpace">공간별로 보기</button>' +
           '<button class="btn-s' + (by === "folder" ? " on" : "") + '" id="byFolder">분류별로 보기</button>' +
+          '<button class="btn-s' + (by === "all" ? " on" : "") + '" id="byAll">과제 전체 보기</button>' +
         '</div>' +
         (all.length
-          ? groups.map(function (g) {
-              return '<div class="fold"><span class="dl">' + esc(g.label) + '</span><b>' + g.rows.length + '개</b></div>' +
-                '<div class="libgrid">' + g.rows.map(function (a) {
-                  return '<div class="libcard">' +
-                    '<span class="menuwrap libmenu">' +
-                      '<button class="btn-s dots" data-m="l' + a.id + '" aria-label="더 보기">⋯</button>' +
-                      '<div class="menu" id="ml' + a.id + '" hidden>' +
-                        '<button class="mi prev" data-id="' + a.id + '">' + ICON.play + '크게 보기</button>' +
-                        '<button class="mi cpto" data-id="' + a.id + '" data-t="' + esc(a.title) + '">' + ICON.copy + '공간에 넣기</button>' +
-                        '<button class="mi lfold" data-id="' + a.id + '" data-f="' + esc(a.lib_folder || "") + '">' + ICON.folder + '분류 바꾸기</button>' +
-                        '<button class="mi code" data-id="' + a.id + '">' + ICON.code + 'HTML 코드 보기</button>' +
-                      '</div></span>' +
-                    '<div class="libthumb prev" data-id="' + a.id + '" data-lazy="' + a.id + '">' +
-                      '<span class="tph">' + esc(a.title.slice(0, 1)) + '</span></div>' +
-                    '<div class="libcap"><b class="prev" data-id="' + a.id + '">' + esc(a.title) + '</b>' +
-                    '<i>' + (by === "folder"
-                      ? esc(names[a.space_code] || a.space_code)
-                      : (a.lib_folder ? esc(a.lib_folder) : "분류 없음")) + '</i>' +
-                    '<i>' + fmt(a.created_at) + '</i></div></div>';
-                }).join("") + '</div>';
-            }).join("")
+          ? groupsHtml()
           : '<div class="empty">아직 올린 과제가 없습니다.</div>') +
         '</div><div id="modal"></div>');
 
@@ -323,6 +338,15 @@ function viewLibrary() {
       wireHelp();
       on("#bySpace", "click", function () { ST.libBy = "space"; viewLibrary(); });
       on("#byFolder", "click", function () { ST.libBy = "folder"; viewLibrary(); });
+      on("#byAll", "click", function () { ST.libBy = "all"; viewLibrary(); });
+      /* 펼침 상태는 ST 에 남겨 두어 보기를 바꿔도 그대로 돌아옵니다 */
+      var folds = app.querySelectorAll("details.libfold");
+      folds.forEach(function (d) {
+        d.addEventListener("toggle", function () { ST.libOpen[d.dataset.k] = d.open; });
+      });
+      var setAll = function (v) { folds.forEach(function (d) { d.open = v; ST.libOpen[d.dataset.k] = v; }); };
+      on("#libOpenAll", "click", function () { setAll(true); });
+      on("#libShutAll", "click", function () { setAll(false); });
 
       wireMenus();
       app.querySelectorAll(".prev").forEach(function (b) {
@@ -613,7 +637,9 @@ var HELP = {
     "만료일을 정해 두면 그날이 지나는 순간 그 선생님 목록에서 공간이 사라집니다. 한 공간에 20명까지 초대할 수 있습니다."
   ]],
   lib: ["과제 보관함", [
-    "내가 관리하는 모든 공간의 과제가 미리보기 카드로 모입니다. 공간별 또는 분류별로 볼 수 있습니다.",
+    "내가 관리하는 모든 공간의 과제가 미리보기 카드로 모입니다. 공간별·분류별·전체 세 가지로 볼 수 있습니다.",
+    "공간별과 분류별에서는 묶음이 접혀 있습니다. 묶음 이름을 누르면 그 안의 과제가 펼쳐지고, 모두 펼치기·모두 접기로 한 번에 여닫을 수 있습니다.",
+    "과제 전체 보기는 묶지 않고 최근 올린 순서대로 모두 보여 줍니다.",
     "분류는 보관함에서만 쓰는 꼬리표입니다. 공간 안의 폴더와는 따로 움직입니다.",
     "카드의 ⋯에서 공간에 넣기를 고르면 원하는 공간으로 복사됩니다. 원본은 그대로 남습니다."
   ]]

@@ -403,3 +403,17 @@ body.tvmode .livehead { display: flex !important; }
 .liveproto { border: 1px dashed #D0C8B8; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; background: #FFFDF7; }
 .liveproto summary { cursor: pointer; font-size: 13px; font-weight: 600; color: #7C2D12; }
 body.tvmode .liveproto { display: none; }
+
+/* 보관함 그룹 토글 — 공간별·분류별 보기에서 묶음을 접었다 폅니다 */
+.libfold { border-bottom: 2px solid #DCCFB4; }
+.libfold > summary { display: flex; align-items: baseline; gap: 6px; cursor: pointer;
+  list-style: none; padding: 11px 2px 9px; font-size: 13px; font-weight: 700; color: #2C2C2A;
+  user-select: none; }
+.libfold > summary::-webkit-details-marker { display: none; }
+.libfold > summary::before { content: "▶"; font-size: 9px; color: var(--ink2);
+  display: inline-block; transition: transform .12s; }
+.libfold[open] > summary::before { transform: rotate(90deg); }
+.libfold > summary:hover { color: #7C2D12; }
+.libfold > summary .dl { flex: 1; cursor: pointer; }
+.libfold > summary b { font-weight: 400; font-size: 11.5px; color: var(--ink2); font-family: var(--mono); }
+.libfold[open] { padding-bottom: 8px; }
