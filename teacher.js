@@ -741,7 +741,8 @@ function panelApps() {
           '<input type="text" id="anewf" placeholder="새 폴더 이름" style="display:none">' +
           '<label>HTML 코드</label><textarea id="ahtml" placeholder="&lt;!DOCTYPE html&gt; …"></textarea>' +
           '<div class="row"><button class="btn-s" id="pickfile">.html 파일 고르기</button>' +
-          '<button class="btn-p" id="addapp">과제 추가</button></div>' +
+          '<button class="btn-p" id="addapp">과제 추가</button>' +
+          '<span class="m" id="hname"></span></div>' +
           '<input type="file" id="hfile" accept=".html,.htm,text/html" style="display:none">' +
           '<div class="err" id="err" style="margin-top:10px"></div></div>' + scoreGuideHtml()) +
         '<div id="modal"></div>';
@@ -749,28 +750,38 @@ function panelApps() {
       wireFolderSelect("afolder", "anewf");
       wireScoreGuide();
       on("#pickfile", "click", function () { $("#hfile").click(); });
+      ST.pendingHtml = null;
       on("#hfile", "change", function (e) {
         var f = e.target.files[0]; if (!f) return;
+        e.target.value = "";
         var rd = new FileReader();
         rd.onload = function () {
-          $("#ahtml").value = String(rd.result);
+          ST.pendingHtml = String(rd.result);
+          $("#ahtml").value = "";
+          $("#hname").textContent = f.name + " · " + Math.round(ST.pendingHtml.length / 1024) + "KB";
           if (!$("#atitle").value) $("#atitle").value = f.name.replace(/\.html?$/i, "");
         };
-        rd.readAsText(f); e.target.value = "";
+        rd.onerror = function () { setErr("파일을 읽지 못했습니다."); };
+        rd.readAsText(f, "utf-8");
+      });
+      on("#ahtml", "input", function () {
+        if (ST.pendingHtml && $("#ahtml").value) { ST.pendingHtml = null; $("#hname").textContent = ""; }
       });
       on("#addapp", "click", function () {
-        var title = $("#atitle").value.trim(), html = $("#ahtml").value;
+        var title = $("#atitle").value.trim();
+        var html = $("#ahtml").value.trim() ? $("#ahtml").value : (ST.pendingHtml || "");
         var folder = readFolder("afolder", "anewf");
         if (folder === null) return setErr("새 폴더 이름을 입력하세요.");
         if (!title) return setErr("과제 제목을 입력하세요.");
         if (!html.trim()) return setErr("HTML 코드를 붙여넣거나 파일을 고르세요.");
-        var btn = $("#addapp"); btn.disabled = true; setErr("");
+        var btn = $("#addapp"); btn.disabled = true; btn.textContent = "올리는 중…"; setErr("");
         sb.from("apps").insert({ space_code: ST.space.code, title: title, html: html,
           note: ($("#anote").value.trim() || null), created_by: ST.user.id,
           folder: folder || null, position: ST.apps.length })
           .then(function (r) {
-            btn.disabled = false;
+            btn.disabled = false; btn.textContent = "과제 추가";
             if (r.error) return setErr("저장하지 못했습니다: " + r.error.message);
+            ST.pendingHtml = null;
             panelApps();
           });
       });
