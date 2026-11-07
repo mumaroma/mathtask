@@ -163,9 +163,7 @@ function panelLive() {
       '<select id="liveCols" title="한 줄에 몇 개"><option value="3">3개씩</option><option value="4" selected>4개씩</option><option value="5">5개씩</option><option value="6">6개씩</option></select>' +
       '<button class="btn-s" id="liveTV">TV 모드</button></span></div>' +
     liveGuideHtml() +
-    '<p class="hint">학생이 과제를 열고 조작하면 그 상태가 아래 카드에 그대로 다시 그려집니다. 카드를 누르면 <b>새 창</b>에 그 학생의 작업 화면이 크게 열리고 계속 따라 바뀝니다(TV에 끌어다 놓기 좋습니다). ' +
-      '새 창의 <b>내가 해보기</b>를 누르면 그 화면을 떼어 내 선생님이 직접 조작해 볼 수 있고(학생 화면에는 영향이 없습니다), <b>학생 화면으로 돌아가기</b>로 다시 따라갑니다. ' +
-      '과제 HTML 에 <code>sim:state</code> / <code>sim:apply</code> 규약이 들어 있어야 합니다.</p>' +
+    '<p class="hint">학생이 조작하면 그 상태가 아래 카드에 그대로 다시 그려집니다. 자세한 설명과 과제에 넣을 코드는 위 토글을 열어 보세요.</p>' +
     '<div class="livesum" id="livesum"></div>' +
     '<div class="livegrid" id="livegrid"><div class="empty">학생이 과제를 열면 여기에 나타납니다.</div></div></div>';
   on("#liveTV", "click", function () { liveTV(!document.body.classList.contains("tvmode")); });
@@ -201,10 +199,14 @@ function panelLive() {
 
 /* 실시간 규약 안내문 토글 — 실시간 탭과 과제 추가 화면에서 같이 씁니다 */
 function liveGuideHtml() {
-  return '<details class="liveproto"><summary>실시간 수업 규약 — 과제 HTML 에 넣을 코드</summary>' +
-    '<p class="hint">선생님 화면에 학생의 작업이 그대로 다시 그려지려면 과제 HTML 안에 아래 코드가 있어야 합니다. ' +
+  return '<details class="liveproto"><summary>실시간 수업 앱을 만드는 경우 — 과제 HTML 에 넣을 코드</summary>' +
+    '<p class="hint">학생이 과제를 열고 조작하면 그 상태가 <b>실시간 탭의 카드</b>에 그대로 다시 그려집니다.</p>' +
+    '<p class="hint">카드를 누르면 <b>새 창</b>에 그 학생의 작업 화면이 크게 열리고 계속 따라 바뀝니다(TV에 끌어다 놓기 좋습니다).</p>' +
+    '<p class="hint">새 창의 <b>내가 해보기</b>를 누르면 그 화면을 떼어 내 선생님이 직접 조작해 볼 수 있고(학생 화면에는 영향이 없습니다), ' +
+    '<b>학생 화면으로 돌아가기</b>로 다시 따라갑니다.</p>' +
+    '<p class="hint" style="margin-top:8px">이렇게 되려면 과제 HTML 안에 아래 코드가 있어야 합니다. ' +
     '과제를 만들 때(클로드·GPT 등) 이 안내문을 그대로 붙여 넣으시고, 이미 만든 과제는 HTML 과 함께 주면서 ' +
-    '"실시간 규약을 추가해 줘"라고 하면 됩니다.</p>' +
+    '"실시간 수업 규약을 추가해 줘"라고 하면 됩니다.</p>' +
     '<div class="row" style="margin-bottom:8px"><button type="button" class="btn-s" id="liveCopyPrompt">안내문 복사</button>' +
     '<button type="button" class="btn-s" id="liveDlPrompt">텍스트 파일로 받기</button></div>' +
     '<textarea id="livePromptBox" readonly style="width:100%;height:260px;font-family:var(--mono);font-size:12px"></textarea></details>';
@@ -214,7 +216,7 @@ function liveWireGuide() {
   box.value = LIVE_PROMPT;
   on("#liveCopyPrompt", "click", function (e) { copy(LIVE_PROMPT, e.target); });
   on("#liveDlPrompt", "click", function () {
-    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([LIVE_PROMPT], { type: "text/plain;charset=utf-8" })); a.download = "실시간수업_규약_안내문.txt"; a.click();
+    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([LIVE_PROMPT], { type: "text/plain;charset=utf-8" })); a.download = "실시간수업앱_규약_안내문.txt"; a.click();
   });
 }
 
@@ -230,7 +232,7 @@ function liveNoticeHtml() {
     '<li>받은 HTML 을 이 공간의 과제로 올립니다. 별도 프로그램이나 스킬 설치는 필요 없습니다.</li></ol>' +
     '<div class="row"><button type="button" class="btn-s" id="liveNoticeCopy">안내문 복사</button>' +
     '<button type="button" class="btn-s" id="liveNoticeDl">텍스트 파일로 받기</button></div>' +
-    '<p class="m">같은 안내문은 공간을 연 뒤 \'실시간\' 탭 위쪽 \'실시간 규약\' 상자에서도 볼 수 있습니다.</p></div>';
+    '<p class="m">같은 안내문은 공간을 연 뒤 \'실시간\' 탭 위쪽 \'실시간 수업 앱을 만드는 경우\' 토글에서도 볼 수 있습니다.</p></div>';
 }
 function liveWireNotice() {
   var c = document.getElementById("liveNoticeCopy"), d = document.getElementById("liveNoticeDl");
@@ -238,7 +240,7 @@ function liveWireNotice() {
   if (d) d.addEventListener("click", function (e) { e.preventDefault(); liveDownloadPrompt(); });
 }
 function liveDownloadPrompt() {
-  var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([LIVE_PROMPT], { type: "text/plain;charset=utf-8" })); a.download = "실시간수업_규약_안내문.txt"; a.click();
+  var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([LIVE_PROMPT], { type: "text/plain;charset=utf-8" })); a.download = "실시간수업앱_규약_안내문.txt"; a.click();
 }
 /* iframe 이 막 로드됐을 때는 과제 스크립트의 초기화가 아직 끝나지 않았을 수 있어, 상태를 몇 번에 나눠 보냅니다 */
 function liveApplyRetry(fr, getState) {

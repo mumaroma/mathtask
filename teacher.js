@@ -621,7 +621,7 @@ var HELP = {
     "카드를 누르면 새 창에 그 학생의 작업 화면이 크게 열리고 계속 따라 바뀝니다(보기 전용). 그 창을 TV 화면으로 옮겨 두면 됩니다.",
     "위의 과제 선택 상자로 특정 과제를 열어 둔 학생만 골라 볼 수 있고, 이름 숨기기와 한 줄 개수도 조절합니다.",
     "TV 모드는 윗부분을 숨기고 카드만 크게 보여 줍니다. TV 에 연결한 컴퓨터에서 켜 두세요.",
-    "과제 HTML 에 sim:state / sim:apply 규약(getState·setState)이 들어 있어야 상태가 전달됩니다. 규약이 없는 과제는 접속 여부만 보입니다. 별도 프로그램이나 스킬 설치는 필요 없고, 과제를 만들 때 AI 에게 붙여 넣는 안내문이 실시간 탭 위쪽 '실시간 규약' 상자에 있습니다(복사·텍스트 파일 받기)."
+    "과제 HTML 에 sim:state / sim:apply 규약(getState·setState)이 들어 있어야 상태가 전달됩니다. 규약이 없는 과제는 접속 여부만 보입니다. 별도 프로그램이나 스킬 설치는 필요 없고, 과제를 만들 때 AI 에게 붙여 넣는 안내문이 실시간 탭 위쪽 '실시간 수업 앱을 만드는 경우' 토글에 있습니다(복사·텍스트 파일 받기)."
   ]],
   score: ["순위", [
     "순위 과제로 켜 둔 과제에서 학생이 보낸 점수가 모입니다.",
@@ -770,7 +770,10 @@ function panelApps() {
           '<button class="btn-p" id="addapp">과제 추가</button>' +
           '<span class="m" id="hname"></span></div>' +
           '<input type="file" id="hfile" accept=".html,.htm,text/html" style="display:none">' +
-          '<div class="err" id="err" style="margin-top:10px"></div></div>' + scoreGuideHtml() + liveGuide()) +
+          '<div class="err" id="err" style="margin-top:10px"></div></div>' +
+          /* 공개용은 학생이 익명이라 순위도 실시간도 쓰지 않습니다 */
+          (ST.space.mode === "open" ? '' : scoreGuideHtml()) +
+          (ST.space.mode === "live" ? liveGuide() : '')) +
         '<div id="modal"></div>';
 
       wireFolderSelect("afolder", "anewf");
