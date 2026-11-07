@@ -417,3 +417,14 @@ body.tvmode .liveproto { display: none; }
 .libfold > summary .dl { flex: 1; cursor: pointer; }
 .libfold > summary b { font-weight: 400; font-size: 11.5px; color: var(--ink2); font-family: var(--mono); }
 .libfold[open] { padding-bottom: 8px; }
+
+/* 보관함 여러 개 고르기 — 분류별 보기에서 '분류에 넣기' 를 누르면 켜집니다 */
+.libcard .libpick { display: none; position: absolute; left: 7px; top: 7px; z-index: 3;
+  width: 26px; height: 26px; border: 2px solid #2C2C2A; border-radius: 6px;
+  background: rgba(255,255,255,.92); box-shadow: 2px 2px 0 #E8D9B0; cursor: pointer; }
+.libcard .libpick input { width: 16px; height: 16px; margin: 3px 0 0 3px; cursor: pointer; accent-color: #7C2D12; }
+#libwrap.picking .libcard .libpick { display: block; }
+#libwrap.picking .libcard { cursor: pointer; }
+#libwrap.picking .libcard.on { outline: 3px solid #7C2D12; outline-offset: 1px; }
+#libwrap.picking .libmenu { display: none; }
+#libPickGo:disabled { opacity: .45; cursor: default; }

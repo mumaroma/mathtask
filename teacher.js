@@ -287,6 +287,8 @@ function viewLibrary() {
       }
 
       ST.libOpen = ST.libOpen || {};
+      if (by !== "folder") ST.libPick = null;          /* 고르기는 분류별 보기 전용 */
+      var picking = !!ST.libPick;
       var cardHtml = function (a) {
         return '<div class="libcard">' +
           '<span class="menuwrap libmenu">' +
@@ -297,6 +299,8 @@ function viewLibrary() {
               '<button class="mi lfold" data-id="' + a.id + '" data-f="' + esc(a.lib_folder || "") + '">' + ICON.folder + '분류 바꾸기</button>' +
               '<button class="mi code" data-id="' + a.id + '">' + ICON.code + 'HTML 코드 보기</button>' +
             '</div></span>' +
+          '<label class="libpick"><input type="checkbox" class="libsel" data-id="' + a.id + '"' +
+            (picking && ST.libPick[a.id] ? ' checked' : '') + '></label>' +
           '<div class="libthumb prev" data-id="' + a.id + '" data-lazy="' + a.id + '">' +
             '<span class="tph">' + esc(a.title.slice(0, 1)) + '</span></div>' +
           '<div class="libcap"><b class="prev" data-id="' + a.id + '">' + esc(a.title) + '</b>' +
@@ -305,17 +309,26 @@ function viewLibrary() {
                  : (a.lib_folder ? esc(a.lib_folder) : "분류 없음")) + '</i>' +
           '<i>' + fmt(a.created_at) + '</i></div></div>';
       };
+      var toolRow = function () {
+        var t = '<div class="row" style="gap:8px;margin:0 0 10px;align-items:center">' +
+          '<button class="btn-s" id="libOpenAll">모두 펼치기</button>' +
+          '<button class="btn-s" id="libShutAll">모두 접기</button>';
+        if (by !== "folder") return t + '</div>';
+        if (!picking) return t + '<button class="btn-s" id="libPickOn">' + ICON.folder + '분류에 넣기</button></div>';
+        return t + '<button class="btn-s" id="libPickAll">펼친 묶음 모두 고르기</button>' +
+          '<button class="btn-p" id="libPickGo">고른 과제를 분류에 넣기 (<span id="libPickN">0</span>)</button>' +
+          '<button class="btn-s" id="libPickOff">취소</button></div>';
+      };
       var groupsHtml = function () {
         if (by === "all") return '<div class="libgrid">' + all.map(cardHtml).join("") + '</div>';
-        return '<div class="row" style="gap:8px;margin:0 0 10px">' +
-            '<button class="btn-s" id="libOpenAll">모두 펼치기</button>' +
-            '<button class="btn-s" id="libShutAll">모두 접기</button></div>' +
+        return toolRow() +
+          '<div id="libwrap"' + (picking ? ' class="picking"' : '') + '>' +
           groups.map(function (g) {
             var k = by + "|" + g.label;
             return '<details class="libfold" data-k="' + esc(k) + '"' + (ST.libOpen[k] ? " open" : "") + '>' +
               '<summary><span class="dl">' + esc(g.label) + '</span><b>' + g.rows.length + '개</b></summary>' +
               '<div class="libgrid">' + g.rows.map(cardHtml).join("") + '</div></details>';
-          }).join("");
+          }).join("") + '</div>';
       };
 
       render(
@@ -347,6 +360,66 @@ function viewLibrary() {
       var setAll = function (v) { folds.forEach(function (d) { d.open = v; ST.libOpen[d.dataset.k] = v; }); };
       on("#libOpenAll", "click", function () { setAll(true); });
       on("#libShutAll", "click", function () { setAll(false); });
+
+      /* ── 여러 과제를 한 번에 분류에 넣기 (분류별 보기에서만) ── */
+      on("#libPickOn", "click", function () { ST.libPick = {}; setAll(true); viewLibrary(); });
+      on("#libPickOff", "click", function () { ST.libPick = null; viewLibrary(); });
+      if (picking) {
+        var countEl = function () { return $("#libPickN"); };
+        var refresh = function () {
+          var n = Object.keys(ST.libPick).length;
+          var c = countEl(); if (c) c.textContent = n;
+          var go = $("#libPickGo"); if (go) go.disabled = !n;
+        };
+        var mark = function (cb) {
+          var card = cb.closest(".libcard");
+          if (cb.checked) ST.libPick[cb.dataset.id] = true; else delete ST.libPick[cb.dataset.id];
+          if (card) card.classList.toggle("on", cb.checked);
+          refresh();
+        };
+        app.querySelectorAll(".libsel").forEach(function (cb) {
+          if (cb.checked && cb.closest(".libcard")) cb.closest(".libcard").classList.add("on");
+          cb.addEventListener("change", function () { mark(cb); });
+        });
+        /* 고르기 중에는 카드를 눌러도 미리보기 대신 선택이 됩니다 */
+        app.querySelectorAll("#libwrap .libcard").forEach(function (card) {
+          card.addEventListener("click", function (e) {
+            if (e.target.classList.contains("libsel")) return;
+            e.preventDefault(); e.stopPropagation();
+            var cb = card.querySelector(".libsel"); if (!cb) return;
+            cb.checked = !cb.checked; mark(cb);
+          }, true);
+        });
+        on("#libPickAll", "click", function () {
+          app.querySelectorAll("details.libfold[open] .libsel").forEach(function (cb) {
+            if (!cb.checked) { cb.checked = true; mark(cb); }
+          });
+        });
+        on("#libPickGo", "click", function () {
+          var ids = Object.keys(ST.libPick);
+          if (!ids.length) return;
+          $("#modal").innerHTML =
+            '<div class="modal"><div class="mbox"><div class="pickbox">' +
+            '<h2>고른 과제 ' + ids.length + '개를 분류에 넣기</h2>' +
+            '<p class="hint">보관함에서만 쓰는 분류입니다. 공간 안의 폴더와는 따로 움직입니다.</p>' +
+            '<label>어느 분류에 둘까요</label>' + folderSelect("mfs", "", lf) +
+            '<input type="text" id="mfsnew" placeholder="새 분류 이름" style="display:none">' +
+            '<div class="row"><button class="btn-p" id="mfok">' + ids.length + '개 옮기기</button>' +
+            '<button class="btn-s" id="mfcancel">취소</button></div></div></div></div>';
+          wireFolderSelect("mfs", "mfsnew");
+          on("#mfcancel", "click", function () { $("#modal").innerHTML = ""; });
+          on("#mfok", "click", function () {
+            var next = readFolder("mfs", "mfsnew");
+            if (next === null) return alert("새 분류 이름을 입력하세요.");
+            var btn = $("#mfok"); btn.disabled = true; btn.textContent = "옮기는 중…";
+            sb.from("apps").update({ lib_folder: next || null }).in("id", ids).then(function (rr) {
+              if (rr.error) { btn.disabled = false; btn.textContent = ids.length + "개 옮기기"; return alert("옮기지 못했습니다: " + rr.error.message); }
+              ST.libPick = null; $("#modal").innerHTML = ""; viewLibrary();
+            });
+          });
+        });
+        refresh();
+      }
 
       wireMenus();
       app.querySelectorAll(".prev").forEach(function (b) {
@@ -640,6 +713,7 @@ var HELP = {
     "내가 관리하는 모든 공간의 과제가 미리보기 카드로 모입니다. 공간별·분류별·전체 세 가지로 볼 수 있습니다.",
     "공간별과 분류별에서는 묶음이 접혀 있습니다. 묶음 이름을 누르면 그 안의 과제가 펼쳐지고, 모두 펼치기·모두 접기로 한 번에 여닫을 수 있습니다.",
     "과제 전체 보기는 묶지 않고 최근 올린 순서대로 모두 보여 줍니다.",
+    "분류별로 보기에서 분류에 넣기를 누르면 카드마다 네모가 생깁니다. 여러 개를 고른 뒤 한 번에 같은 분류로 옮길 수 있습니다.",
     "분류는 보관함에서만 쓰는 꼬리표입니다. 공간 안의 폴더와는 따로 움직입니다.",
     "카드의 ⋯에서 공간에 넣기를 고르면 원하는 공간으로 복사됩니다. 원본은 그대로 남습니다."
   ]]
