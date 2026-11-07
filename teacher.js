@@ -578,7 +578,8 @@ function viewDash() {
         (sp.mode === "live" ? '<button class="tab' + (ST.tab === "live" ? " on" : "") + '" data-tab="live">실시간 <span class="modetag live" style="margin-left:4px">Beta</span></button>' : '') +
         '<button class="tab' + (ST.tab === "sub" ? " on" : "") + '" data-tab="sub">제출 결과</button>' +
         '<button class="tab' + (ST.tab === "stu" ? " on" : "") + '" data-tab="stu">학생 명단</button>' +
-        '<button class="tab' + (ST.tab === "score" ? " on" : "") + '" data-tab="score">순위</button>') +
+        '<button class="tab' + (ST.tab === "score" ? " on" : "") + '" data-tab="score">순위</button>' +
+        '<button class="tab' + (ST.tab === "sheet" ? " on" : "") + '" data-tab="sheet">응답표</button>') +
       (sp.owner === ST.user.id
         ? '<button class="tab' + (ST.tab === "mem" ? " on" : "") + '" data-tab="mem">함께 관리</button>'
         : '') +
@@ -623,6 +624,7 @@ function viewDash() {
   else if (ST.tab === "mem") panelMembers();
   else if (ST.tab === "stu") panelStudents();
   else if (ST.tab === "score") panelScore();
+  else if (ST.tab === "sheet") panelSheet();
   else panelSubs();
 }
 
@@ -704,6 +706,13 @@ var HELP = {
     "집계 방식은 과제마다 정합니다. 합계는 할 때마다 쌓이고, 최고 점수는 가장 잘한 한 판만, 마지막 점수는 가장 최근 한 판만 봅니다.",
     "교실에서 화면에 띄우실 때는 이름 숨기기를 켜면 등수만 보입니다.",
     "점수는 학생 기기에서 오므로 완전히 막을 수는 없습니다. 성적에 쓰실 때는 제출 결과와 함께 보세요."
+  ]],
+  sheet: ["응답표", [
+    "학생이 과제에서 문항마다 쓴 답이 표로 모입니다. 과제 추가 아래의 <b>응답표를 만드는 경우</b> 안내문을 넣어 만든 과제에서만 들어옵니다.",
+    "학생이 보내기를 누를 때마다 한 줄이 쌓이므로, 중간에 보낸 것도 회차와 함께 모두 남습니다. 마지막 것만 보시려면 위쪽 체크를 켜세요.",
+    "열 이름은 과제가 보내 준 문항 이름이고, 칸에 마우스를 올리면 긴 답이 모두 보입니다.",
+    "엑셀 받기를 누르면 지금 보이는 표가 그대로 파일로 내려옵니다.",
+    "학생 기기에 30초마다 저장되는 이어하기 기록은 학생에게만 남고 이 표에는 오지 않습니다."
   ]],
   mem: ["함께 관리", [
     "상대 선생님이 구글 로그인에 쓰는 이메일로 초대합니다. 메일이 자동으로 가지는 않으니 직접 알려 주세요.",
@@ -852,12 +861,12 @@ function panelApps() {
           '<input type="file" id="hfile" accept=".html,.htm,text/html" style="display:none">' +
           '<div class="err" id="err" style="margin-top:10px"></div></div>' +
           /* 공개용은 학생이 익명이라 순위도 실시간도 쓰지 않습니다 */
-          (ST.space.mode === "open" ? '' : scoreGuideHtml()) +
+          (ST.space.mode === "open" ? '' : scoreGuideHtml() + sheetGuideHtml()) +
           (ST.space.mode === "live" ? liveGuide() : '')) +
         '<div id="modal"></div>';
 
       wireFolderSelect("afolder", "anewf");
-      wireScoreGuide(); wireLiveGuide();
+      wireScoreGuide(); wireSheetGuide(); wireLiveGuide();
       on("#pickfile", "click", function () { $("#hfile").click(); });
       ST.pendingHtml = null;
       on("#hfile", "change", function (e) {
@@ -1145,6 +1154,206 @@ function scoreOff(id, title) {
     if (r.error) return alert("바꾸지 못했습니다: " + r.error.message);
     $("#modal").innerHTML = "";
     panelApps();
+  });
+}
+
+/* ── 응답표: 과제가 보낸 문항별 답을 표와 엑셀로 ───────── */
+var SHEET_PROMPT = [
+  "이 HTML 과제 앱에 '응답표' 규약을 넣어 주세요. 학생이 문항마다 쓴 답을 부모 창(iframe 바깥)으로 보내면, 선생님 화면에서 표와 엑셀로 모입니다.",
+  "",
+  "아래 코드를 그대로 넣으세요:",
+  "",
+  "/* ── 문항별 답변 모으기 ──────────────────────────── */",
+  "function getAnswers() {",
+  "  return [",
+  "    { no: 1, q: '문항 1 — 무엇을 물었는지', a: document.getElementById('a1').value },",
+  "    { no: 2, q: '문항 2 — 무엇을 물었는지', a: document.getElementById('a2').value }",
+  "    // 문항 수만큼 늘립니다. q 는 표의 열 이름, a 는 학생이 쓴 답(글자)입니다.",
+  "  ];",
+  "}",
+  "",
+  "/* ── 선생님께 보내기 ────────────────────────────── */",
+  "function sendToTeacher() {",
+  "  if (window.parent === window) return;        // 혼자 열어 봤을 때는 그냥 넘어감",
+  "  window.parent.postMessage({",
+  "    type: 'mathtaskSubmit',",
+  "    data: { kind: 'answers', answers: getAnswers() }",
+  "  }, '*');",
+  "}",
+  "",
+  "/* ── 이어하기 (이 기기에 저장) ──────────────────── */",
+  "function getState() { return { answers: getAnswers() }; }   // 되살리는 데 필요한 값을 다 담으세요",
+  "function setState(st) { /* st 로 화면을 되돌려 놓습니다 */ }",
+  "",
+  "window.addEventListener('message', (e) => {",
+  "  const d = e.data; if (!d) return;",
+  "  if (d.type === 'mathtaskLoaded' && d.data) setState(d.data);          // 저장해 둔 기록",
+  "  if (d.type === 'mathtaskSaveRequest')                                  // 30초마다 옵니다",
+  "    window.parent.postMessage({ type: 'mathtaskSave', data: getState() }, '*');",
+  "  if (d.type === 'mathtaskSubmitResult')",
+  "    alert(d.ok ? '선생님께 보냈습니다.' : '보내지 못했습니다. 다시 눌러 주세요.');",
+  "});",
+  "",
+  "if (window.parent !== window) window.parent.postMessage({ type: 'mathtaskLoad' }, '*');",
+  "",
+  "지켜 주세요:",
+  "1. 화면에 '선생님께 보내기' 버튼을 하나 두고 sendToTeacher() 를 부릅니다. 다 쓰기 전에 눌러도 되고, 여러 번 눌러도 됩니다(보낸 것이 모두 쌓입니다).",
+  "2. q 는 문항마다 다른 이름으로, 짧게 씁니다. 그 글이 표와 엑셀의 열 이름이 됩니다.",
+  "3. a 는 반드시 글자(문자열)로 보냅니다. 여러 개를 고르는 문항은 쉼표로 이어 붙이세요.",
+  "4. no 는 1부터 차례로 붙입니다. 표의 열 순서가 됩니다.",
+  "5. 30초마다 오는 mathtaskSaveRequest 에 답해 두면 학생이 창을 닫았다 들어와도 쓴 내용이 남습니다. 이 저장은 학생 기기에만 남고 선생님께는 가지 않습니다.",
+  "6. window.parent === window 검사는 꼭 남겨 두세요. 파일을 직접 열어 볼 때 오류 없이 작동해야 합니다.",
+  "",
+  "주의: 외부 라이브러리 없이 한 파일(HTML+CSS+JS)로 만들고, 배경은 흰색, 마우스와 터치 모두 지원하세요."
+].join("\n");
+
+function sheetGuideHtml() {
+  return '<details class="liveproto"><summary>응답표를 만드는 경우 — 과제 HTML 에 넣을 코드</summary>' +
+    '<p class="hint">문항별로 쓴 답을 표와 엑셀로 받으려면 HTML 안에 아래 코드가 있어야 합니다. ' +
+    '과제를 만들 때(클로드·GPT 등) 이 안내문을 그대로 붙여 넣으시고, 이미 만든 과제는 HTML 과 함께 주면서 ' +
+    '"응답표 규약을 추가해 줘"라고 하면 됩니다. 보낸 답은 <b>응답표</b> 탭에 모입니다.</p>' +
+    '<div class="row" style="margin-bottom:8px"><button class="btn-s" id="shCopy">안내문 복사</button>' +
+    '<button class="btn-s" id="shDl">텍스트 파일로 받기</button></div>' +
+    '<textarea id="shBox" readonly style="width:100%;height:220px;font-family:var(--mono);font-size:12px"></textarea></details>';
+}
+
+function wireSheetGuide() {
+  var box = $("#shBox"); if (!box) return;
+  box.value = SHEET_PROMPT;
+  on("#shCopy", "click", function (e) { copy(SHEET_PROMPT, e.target); });
+  on("#shDl", "click", function () {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([SHEET_PROMPT], { type: "text/plain;charset=utf-8" }));
+    a.download = "응답표_규약_안내문.txt"; a.click();
+  });
+}
+
+/* 보낸 것 하나하나를 한 줄로 만듭니다 */
+function sheetRows(subs, lastOnly) {
+  var seq = {}, rows = [];
+  subs.forEach(function (x) {
+    var ans = x.payload && x.payload.answers;
+    if (!Array.isArray(ans) || !ans.length) return;
+    var who = (x.student_id || x.student_name || "?") + "";
+    seq[who] = (seq[who] || 0) + 1;
+    rows.push({ id: x.id, who: who, name: x.student_name || "(이름 없음)", nth: seq[who], at: x.created_at, ans: ans });
+  });
+  if (lastOnly) {
+    var keep = {};
+    rows.forEach(function (r) { keep[r.who] = r; });
+    rows = rows.filter(function (r) { return keep[r.who] === r; });
+  }
+  rows.sort(function (a, b) {
+    return a.name.localeCompare(b.name, "ko") || a.nth - b.nth;
+  });
+  return rows;
+}
+
+/* 열 이름 — 문항 번호 순, 처음 나온 이름을 씁니다 */
+function sheetCols(rows) {
+  var seen = {}, cols = [];
+  rows.forEach(function (r) {
+    r.ans.forEach(function (a) {
+      var k = String(a.no == null ? a.q : a.no);
+      if (!seen[k]) { seen[k] = true; cols.push({ k: k, q: String(a.q == null ? k : a.q) }); }
+    });
+  });
+  cols.sort(function (a, b) {
+    var x = parseFloat(a.k), y = parseFloat(b.k);
+    if (isNaN(x) || isNaN(y)) return 0;
+    return x - y;
+  });
+  return cols;
+}
+
+function sheetCell(r, k) {
+  for (var i = 0; i < r.ans.length; i++) {
+    var a = r.ans[i];
+    if (String(a.no == null ? a.q : a.no) === k) return a.a == null ? "" : String(a.a);
+  }
+  return "";
+}
+
+function panelSheet() {
+  var pick = ST.sheetApp || "";
+  var load = function () {
+    var box = $("#shTable"); if (box) box.innerHTML = '<div class="empty">불러오는 중…</div>';
+    var q = sb.from("submissions")
+      .select("id,app_id,app_title,student_name,student_id,created_at,payload")
+      .eq("space_code", ST.space.code).not("payload", "is", null)
+      .order("created_at").limit(2000);
+    if (pick) q = q.eq("app_id", pick);
+    q.then(function (r) {
+      box = $("#shTable"); if (!box) return;
+      if (r.error) { box.innerHTML = '<div class="empty">불러오지 못했습니다: ' + esc(r.error.message) + '</div>'; return; }
+      var subs = (r.data || []).filter(function (x) {
+        return x.payload && x.payload.kind === "answers" && x.payload.answers;
+      });
+      var rows = sheetRows(subs, !!ST.sheetLast), cols = sheetCols(rows);
+      ST.sheetData = { rows: rows, cols: cols };
+      if (!rows.length) { box.innerHTML = '<div class="empty">아직 들어온 응답이 없습니다.</div>'; return; }
+      box.innerHTML =
+        '<div class="mwrap"><table class="matrix"><thead><tr><th>이름</th><th>회차</th><th>보낸 시각</th>' +
+          cols.map(function (c) { return '<th>' + esc(c.q) + '</th>'; }).join("") +
+        '</tr></thead><tbody>' +
+        rows.map(function (x) {
+          return '<tr><th class="nm">' + esc(x.name) + '</th>' +
+            '<td>' + x.nth + '</td><td class="m">' + hm(x.at) + '</td>' +
+            cols.map(function (c) {
+              var v = sheetCell(x, c.k);
+              return '<td class="ansc" title="' + esc(v) + '"><span>' + esc(v) + '</span></td>';
+            }).join("") + '</tr>';
+        }).join("") + '</tbody></table></div>' +
+        '<p class="m" style="margin-top:8px">' + rows.length + '줄 · 문항 ' + cols.length + '개</p>';
+    });
+  };
+
+  sb.from("apps").select("id,title").eq("space_code", ST.space.code).order("position").then(function (r) {
+    var apps = r.data || [];
+    $("#panel").innerHTML =
+      '<div class="card"><div class="between" style="margin-bottom:8px">' +
+        '<h2 style="margin:0">응답표</h2>' +
+        '<span class="row" style="gap:8px;align-items:center">' +
+        '<select id="shPick" style="width:auto;margin:0;font-size:13px;padding:6px 9px">' +
+          '<option value="">모든 과제</option>' +
+          apps.map(function (a) {
+            return '<option value="' + a.id + '"' + (pick === a.id ? " selected" : "") + '>' + esc(a.title) + '</option>';
+          }).join("") +
+        '</select>' +
+        '<label class="dl" style="font-size:12px;margin:0"><input type="checkbox" id="shLast"' +
+          (ST.sheetLast ? ' checked' : '') + '> 마지막 것만</label>' +
+        '<button class="btn-s" id="shXl">엑셀 받기</button>' +
+        '<button class="btn-s" id="shRef">새로고침</button></span></div>' +
+      '<div id="shTable"><div class="empty">불러오는 중…</div></div></div>';
+
+    on("#shPick", "change", function () { ST.sheetApp = pick = $("#shPick").value; load(); });
+    on("#shLast", "change", function () { ST.sheetLast = $("#shLast").checked; load(); });
+    on("#shRef", "click", load);
+    on("#shXl", "click", function (e) { downloadSheet(e.target); });
+    load();
+  });
+}
+
+function downloadSheet(btn) {
+  var d = ST.sheetData;
+  if (!d || !d.rows.length) return alert("내려받을 응답이 없습니다.");
+  var old = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "만드는 중…"; }
+  var aoa = [["이름", "회차", "보낸 시각"].concat(d.cols.map(function (c) { return c.q; }))];
+  d.rows.forEach(function (x) {
+    aoa.push([x.name, x.nth, fmt(x.at)].concat(d.cols.map(function (c) { return sheetCell(x, c.k); })));
+  });
+  var name = ((ST.space && ST.space.title) || "과제공간").replace(/[\\/:*?"<>|]/g, "") + "_응답표.xlsx";
+  ensureXLSX().then(function (XLSX) {
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [{ wch: 14 }, { wch: 6 }, { wch: 18 }].concat(d.cols.map(function () { return { wch: 32 }; }));
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "응답표");
+    XLSX.writeFile(wb, name);
+    if (btn) { btn.disabled = false; btn.textContent = old; }
+  }).catch(function (err) {
+    if (btn) { btn.disabled = false; btn.textContent = old; }
+    alert(err.message);
   });
 }
 

@@ -428,3 +428,12 @@ body.tvmode .liveproto { display: none; }
 #libwrap.picking .libcard.on { outline: 3px solid #7C2D12; outline-offset: 1px; }
 #libwrap.picking .libmenu { display: none; }
 #libPickGo:disabled { opacity: .45; cursor: default; }
+
+/* 응답표 칸 — 긴 답은 세 줄로 줄여 보이고, 올리면 전체가 보입니다.
+   줄 수 제한은 안쪽 span 에 겁니다. td 자체에 display 를 바꾸면 칸이 표에서 빠져나갑니다. */
+table.matrix td.ansc { max-width: 260px; font-size: 12px; line-height: 1.5;
+  text-align: left; vertical-align: top; }
+table.matrix td.ansc > span { display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap;
+  overflow-wrap: anywhere; }
+table.matrix td.ansc:hover > span { -webkit-line-clamp: unset; }

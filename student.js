@@ -125,6 +125,7 @@ function studentGate() {
 }
 
 function studentApps() {
+  if (typeof saveStop === "function") saveStop();
   if (ST.msgFn) { window.removeEventListener("message", ST.msgFn); ST.msgFn = null; }
   if (ST.saveFn) { window.removeEventListener("message", ST.saveFn); ST.saveFn = null; }
   if (ST.scoreFn) { window.removeEventListener("message", ST.scoreFn); ST.scoreFn = null; }
@@ -494,8 +495,14 @@ function listenTaskSubmit(appRow) {
    과제 → 부모 : { type: "mathtaskSave", data }      (기록이 바뀔 때마다)
    기록은 이 기기의 브라우저에 공간·과제·학생별로 따로 저장됩니다. */
 var SAVE_MAX = 100000;
+var SAVE_EVERY = 30000;   /* 30초마다 과제에 저장을 요청합니다 */
+
+function saveStop() {
+  if (ST.saveTimer) { clearInterval(ST.saveTimer); ST.saveTimer = null; }
+}
 function listenTaskSave(appRow) {
   if (ST.saveFn) window.removeEventListener("message", ST.saveFn);
+  saveStop();
   var key = "mt-save-" + ST.space.code + "-" + appRow.id + "-" + (ST.studentId || "guest");
   ST.saveFn = function (e) {
     var fr = app.querySelector("#holder iframe");
@@ -511,6 +518,13 @@ function listenTaskSave(appRow) {
     }
   };
   window.addEventListener("message", ST.saveFn);
+
+  /* 과제가 답할 수 있게 주기적으로 요청만 보냅니다. 저장된 기록은 이 기기에만 남습니다 */
+  ST.saveTimer = setInterval(function () {
+    var fr = app.querySelector("#holder iframe");
+    if (!fr || !fr.contentWindow) return saveStop();
+    try { fr.contentWindow.postMessage({ type: "mathtaskSaveRequest" }, "*"); } catch (x) { }
+  }, SAVE_EVERY);
 }
 
 /* ── 순위 과제: 점수 받기 ─────────────────────────────────
