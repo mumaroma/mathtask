@@ -40,7 +40,7 @@ var LIVE_PROMPT = [
 ].join("\n");
 
 var LIVE = { ch: null, code: null, role: null, sid: null, name: null, appId: null, appTitle: null, lastSent: 0, timer: null,
-  students: {}, html: {}, wins: {}, msgFn: null, hideName: false, cols: 4, appFilter: "" };
+  students: {}, html: {}, wins: {}, detached: {}, msgFn: null, hideName: false, cols: 4, appFilter: "" };
 
 /* TV 모드 켜기/끄기 — 켜면 화면 오른쪽 위에 '되돌아오기' 버튼이 고정되고, Esc 로도 끕니다 */
 function liveTV(on) {
@@ -251,6 +251,7 @@ function liveRenderGrid() {
     }
     card.classList.toggle("off", !s.online);
     card.classList.toggle("spot", !!(LIVE.wins[s.sid] && !LIVE.wins[s.sid].closed));
+    card.classList.toggle("mine", !!LIVE.detached[s.sid]);
     card.querySelector(".lname").textContent = LIVE.hideName ? ("학생 " + (list.indexOf(s) + 1)) : (s.name || "학생");
     card.querySelector(".lmode").textContent = (s.mode || (s.online ? "접속" : "나감")) + (LIVE.appFilter ? "" : (s.title ? " · " + s.title : ""));
   });
@@ -293,19 +294,54 @@ function liveOpenWindow(sid) {
   w.document.write('<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>' + esc(title) + '</title>' +
     '<style>html,body{margin:0;height:100%;background:#fff;font-family:sans-serif}' +
     '.bar{height:36px;display:flex;align-items:center;gap:10px;padding:0 12px;background:#1B4965;color:#fff;font-size:14px}' +
-    '.bar b{font-weight:700}.bar span{opacity:.8;font-size:12px}iframe{border:0;width:100%;height:calc(100% - 36px);display:block;pointer-events:none}</style></head>' +
-    '<body><div class="bar"><b>' + esc(title) + '</b><span>실시간 · 보기 전용</span></div><iframe sandbox="allow-scripts"></iframe></body></html>');
+    '.bar b{font-weight:700}.bar span{opacity:.8;font-size:12px}' +
+    '.bar button{margin-left:auto;font:inherit;font-size:12px;padding:3px 10px;border:1px solid rgba(255,255,255,.55);border-radius:999px;background:transparent;color:#fff;cursor:pointer}' +
+    '.bar button:hover{background:rgba(255,255,255,.15)}body.mine .bar{background:#B7410E}' +
+    'iframe{border:0;width:100%;height:calc(100% - 36px);display:block;pointer-events:none}' +
+    'body.mine iframe{pointer-events:auto}</style></head>' +
+    '<body><div class="bar"><b>' + esc(title) + '</b><span id="sub">실시간 · 보기 전용</span>' +
+    '<button type="button" id="take">내가 해보기</button></div><iframe sandbox="allow-scripts"></iframe></body></html>');
   w.document.close();
   var fr = w.document.querySelector("iframe");
   fr.dataset.app = String(s.app);
-  fr.addEventListener("load", function () { fr.dataset.ready = "1"; liveApplyRetry(fr, function () { var cur = LIVE.students[sid]; return cur && cur.state; }); });
+  fr.addEventListener("load", function () { fr.dataset.ready = "1"; liveApplyRetry(fr, function () { if (LIVE.detached[sid]) return null; var cur = LIVE.students[sid]; return cur && cur.state; }); });
   fr.srcdoc = LIVE.html[s.app] || "";
+  w.document.getElementById("take").addEventListener("click", function () { liveTakeOver(sid, !LIVE.detached[sid]); });
   liveControl(sid, { action: "spotlight", on: true });
-  var poll = setInterval(function () { if (w.closed) { clearInterval(poll); liveControl(sid, { action: "spotlight", on: false }); liveRenderGrid(); } }, 1000);
+  var poll = setInterval(function () { if (w.closed) { clearInterval(poll); delete LIVE.detached[sid]; liveControl(sid, { action: "spotlight", on: false }); liveRenderGrid(); } }, 1000);
+  liveRenderGrid();
+}
+/* 새 창을 '내 복사본'으로 떼어 내거나 다시 학생 화면을 따라가게 합니다.
+   떼어 내도 학생 쪽으로는 아무것도 가지 않습니다 — 상태는 학생 → 교사 한 방향으로만 흐르고,
+   교사가 보내는 control 메시지에는 spotlight(배너)와 ping 뿐이라 상태가 실리지 않습니다. */
+function liveTakeOver(sid, on) {
+  var w = LIVE.wins[sid]; if (!w || w.closed) return;
+  var fr, sub, btn;
+  try { fr = w.document.querySelector("iframe"); sub = w.document.getElementById("sub"); btn = w.document.getElementById("take"); } catch (e) { return; }
+  if (!fr || !sub || !btn) return;
+  if (on) {
+    LIVE.detached[sid] = true;
+    w.document.body.classList.add("mine");
+    sub.textContent = "내 복사본 · 학생 화면과 떨어져 있습니다";
+    btn.textContent = "학생 화면으로 돌아가기";
+    liveControl(sid, { action: "spotlight", on: false });   /* 따라가는 게 아니므로 학생 배너를 내립니다 */
+  } else {
+    delete LIVE.detached[sid];
+    w.document.body.classList.remove("mine");
+    sub.textContent = "실시간 · 보기 전용";
+    btn.textContent = "내가 해보기";
+    liveControl(sid, { action: "spotlight", on: true });
+    var cur = LIVE.students[sid];   /* 떼어 내 있는 동안에도 학생 상태는 계속 쌓이므로 바로 따라붙습니다 */
+    if (cur) {
+      if (fr.dataset.app !== String(cur.app)) { fr.dataset.app = String(cur.app); fr.dataset.ready = ""; fr.srcdoc = LIVE.html[cur.app] || ""; }
+      else if (fr.dataset.ready && cur.state) { try { fr.contentWindow.postMessage({ type: "sim:apply", state: cur.state }, "*"); } catch (e) { } }
+    }
+  }
   liveRenderGrid();
 }
 function liveApplyWindow(s) {
   var w = LIVE.wins[s.sid]; if (!w || w.closed) return;
+  if (LIVE.detached[s.sid]) return;   /* 교사가 떼어 내 조작 중 — 덮어쓰지 않습니다 */
   var fr; try { fr = w.document.querySelector("iframe"); } catch (e) { return; }
   if (!fr) return;
   if (fr.dataset.app !== String(s.app)) { fr.dataset.app = String(s.app); fr.dataset.ready = ""; fr.srcdoc = LIVE.html[s.app] || ""; return; }
