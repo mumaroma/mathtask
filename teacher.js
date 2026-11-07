@@ -697,7 +697,8 @@ var HELP = {
     "과제 HTML 에 sim:state / sim:apply 규약(getState·setState)이 들어 있어야 상태가 전달됩니다. 규약이 없는 과제는 접속 여부만 보입니다. 별도 프로그램이나 스킬 설치는 필요 없고, 과제를 만들 때 AI 에게 붙여 넣는 안내문이 실시간 탭 위쪽 '실시간 수업 앱을 만드는 경우' 토글에 있습니다(복사·텍스트 파일 받기)."
   ]],
   score: ["순위", [
-    "순위 과제로 켜 둔 과제에서 학생이 보낸 점수가 모입니다.",
+    "순위 과제로 켜 둔 과제에서 학생이 보낸 점수가 모입니다. 집계는 최고 점수가 기본이고, 합계나 마지막 점수로 바꿀 수 있습니다.",
+    "순위 리셋을 누르면 쌓인 점수를 지우고 처음부터 다시 쌓습니다. 과제 하나만 골라 두었으면 그 과제만, 전체 합산 상태면 공간 전체를 지웁니다. 되돌릴 수 없습니다.",
     "위쪽 선택 상자로 과제 하나만 보거나, 순위 과제 전체를 합산해 볼 수 있습니다.",
     "집계 방식은 과제마다 정합니다. 합계는 할 때마다 쌓이고, 최고 점수는 가장 잘한 한 판만, 마지막 점수는 가장 최근 한 판만 봅니다.",
     "교실에서 화면에 띄우실 때는 이름 숨기기를 켜면 등수만 보입니다.",
@@ -1096,18 +1097,19 @@ function scoreSetup(id, title, isOn, rule) {
     '<h2>순위 과제 설정 — ' + esc(title) + '</h2>' +
     '<p class="hint">켜면 학생이 보낸 점수가 쌓이고 순위 탭에 집계됩니다. ' +
     '과제 HTML 안에 점수 보내는 코드가 들어 있어야 합니다.</p>' +
-    '<label class="dl" style="margin-bottom:12px"><input type="checkbox" id="scOn"' +
-      (isOn ? ' checked' : '') + '> 이 과제의 점수를 모읍니다</label>' +
+    /* 이 창은 순위 과제로 만들려고 여는 자리라 기본으로 켜 둡니다. 끄면 집계가 멈춥니다. */
+    '<label class="dl" style="margin-bottom:12px"><input type="checkbox" id="scOn" checked>' +
+      ' 이 과제의 점수를 모읍니다</label>' +
     '<label>어떻게 집계할까요</label>' +
     '<select id="scRule">' +
-      '<option value="sum">합계 — 할 때마다 점수가 쌓입니다</option>' +
       '<option value="best">최고 점수 — 가장 잘한 한 판만 봅니다</option>' +
+      '<option value="sum">합계 — 할 때마다 점수가 쌓입니다</option>' +
       '<option value="last">마지막 점수 — 가장 최근 한 판만 봅니다</option>' +
     '</select>' +
     '<div class="err" id="err"></div>' +
     '<div class="row"><button class="btn-p" id="scOk">저장</button>' +
     '<button class="btn-s" id="scCancel">취소</button></div></div></div></div>';
-  $("#scRule").value = rule || "sum";
+  $("#scRule").value = rule || "best";
   on("#scCancel", "click", function () { $("#modal").innerHTML = ""; });
   on("#scOk", "click", function () {
     var btn = $("#scOk"); btn.disabled = true;
@@ -1157,7 +1159,9 @@ function panelScore() {
           '</select>' +
           '<label class="dl" style="font-size:12px;margin:0"><input type="checkbox" id="scHide"' +
             (ST.scoreHide ? ' checked' : '') + '> 이름 숨기기</label>' +
-          '<button class="btn-s" id="scRefresh">새로고침</button></span></div>' +
+          '<button class="btn-s" id="scRefresh">새로고침</button>' +
+          (scored.length ? '<button class="btn-d" id="scReset">순위 리셋</button>' : '') +
+          '</span></div>' +
         (scored.length
           ? '<p class="hint">학생이 과제에서 보낸 점수입니다. 과제를 순위 과제로 켜 두어야 쌓입니다.</p>'
           : '<div class="banner">아직 순위 과제가 없습니다. 과제 앱 탭에서 ⋯ 메뉴의 <b>순위 과제로 만들기</b>를 켜 주세요.</div>') +
@@ -1167,6 +1171,30 @@ function panelScore() {
       on("#scPick", "change", function () { ST.scoreApp = pick = $("#scPick").value; load(); });
       on("#scHide", "change", function () { ST.scoreHide = $("#scHide").checked; load(); });
       on("#scRefresh", "click", load);
+
+      /* 순위 리셋 — 쌓인 점수를 지웁니다. 고른 과제만, 또는 공간 전체. */
+      on("#scReset", "click", function () {
+        var title = "";
+        scored.forEach(function (a) { if (a.id === pick) title = a.title; });
+        var what = pick ? '"' + title + '" 과제의' : "이 공간 순위 과제 전체의";
+        var q = sb.from("scores").select("id", { count: "exact", head: true }).eq("space_code", ST.space.code);
+        if (pick) q = q.eq("app_id", pick);
+        q.then(function (r) {
+          if (r.error) return alert("세어 보지 못했습니다: " + r.error.message);
+          var n = r.count || 0;
+          if (!n) return alert("지울 점수 기록이 없습니다.");
+          if (!confirm(what + " 점수 기록 " + n + "개를 모두 지웁니다.\n\n" +
+            "지우면 되돌릴 수 없고, 순위가 처음부터 다시 쌓입니다.\n계속할까요?")) return;
+          var btn = $("#scReset"); btn.disabled = true; btn.textContent = "지우는 중…";
+          var d = sb.from("scores").delete().eq("space_code", ST.space.code);
+          if (pick) d = d.eq("app_id", pick);
+          d.then(function (rr) {
+            btn.disabled = false; btn.textContent = "순위 리셋";
+            if (rr.error) return alert("지우지 못했습니다: " + rr.error.message);
+            load();
+          });
+        });
+      });
       load();
     });
 }
