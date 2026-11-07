@@ -699,6 +699,7 @@ var HELP = {
   score: ["순위", [
     "순위 과제로 켜 둔 과제에서 학생이 보낸 점수가 모입니다. 집계는 최고 점수가 기본이고, 합계나 마지막 점수로 바꿀 수 있습니다.",
     "순위 리셋을 누르면 쌓인 점수를 지우고 처음부터 다시 쌓습니다. 과제 하나만 골라 두었으면 그 과제만, 전체 합산 상태면 공간 전체를 지웁니다. 되돌릴 수 없습니다.",
+    "순위 과제에서 내리려면 과제 앱 탭의 ⋯ 메뉴에서 순위 과제 해제를 고르거나, 점수 설정 창의 해제 단추를 누르세요. 쌓인 점수는 남습니다.",
     "위쪽 선택 상자로 과제 하나만 보거나, 순위 과제 전체를 합산해 볼 수 있습니다.",
     "집계 방식은 과제마다 정합니다. 합계는 할 때마다 쌓이고, 최고 점수는 가장 잘한 한 판만, 마지막 점수는 가장 최근 한 판만 봅니다.",
     "교실에서 화면에 띄우실 때는 이름 숨기기를 켜면 등수만 보입니다.",
@@ -811,6 +812,10 @@ function panelApps() {
                           '<button class="mi score" data-id="' + a.id + '" data-s="' + (a.scored ? "1" : "") +
                             '" data-r="' + esc(a.score_rule || "sum") + '" data-t="' + esc(a.title) + '">' +
                             ICON.trophy + (a.scored ? '점수 설정 바꾸기' : '순위 과제로 만들기') + '</button>' +
+                          (a.scored
+                            ? '<button class="mi scoff" data-id="' + a.id + '" data-t="' + esc(a.title) + '">' +
+                              ICON.trash + '순위 과제 해제</button>'
+                            : '') +
                           '<button class="mi vers" data-id="' + a.id + '" data-t="' + esc(a.title) + '">' +
                             ICON.clock + '이전 버전' + '</button>'
                         : '') +
@@ -964,6 +969,10 @@ function panelApps() {
         b.addEventListener("click", function () { scoreSetup(b.dataset.id, b.dataset.t, b.dataset.s, b.dataset.r); });
       });
 
+      app.querySelectorAll(".scoff").forEach(function (b) {
+        b.addEventListener("click", function () { scoreOff(b.dataset.id, b.dataset.t); });
+      });
+
       app.querySelectorAll(".vers").forEach(function (b) {
         b.addEventListener("click", function () { showVersions(b.dataset.id, b.dataset.t); });
       });
@@ -1108,9 +1117,13 @@ function scoreSetup(id, title, isOn, rule) {
     '</select>' +
     '<div class="err" id="err"></div>' +
     '<div class="row"><button class="btn-p" id="scOk">저장</button>' +
+    (isOn ? '<button class="btn-d" id="scOff">순위 과제 해제</button>' : '') +
     '<button class="btn-s" id="scCancel">취소</button></div></div></div></div>';
-  $("#scRule").value = rule || "best";
+  /* apps.score_rule 은 만들 때부터 'sum' 이 들어 있어서(컬럼 기본값), 아직 순위 과제가
+     아닌 경우에는 그 값을 쓰지 않고 최고 점수로 시작합니다. */
+  $("#scRule").value = (isOn && rule) ? rule : "best";
   on("#scCancel", "click", function () { $("#modal").innerHTML = ""; });
+  on("#scOff", "click", function () { scoreOff(id, title); });
   on("#scOk", "click", function () {
     var btn = $("#scOk"); btn.disabled = true;
     sb.from("apps").update({ scored: $("#scOn").checked, score_rule: $("#scRule").value })
@@ -1120,6 +1133,18 @@ function scoreSetup(id, title, isOn, rule) {
         $("#modal").innerHTML = "";
         panelApps();
       });
+  });
+}
+
+/* 순위 과제에서 내리기 — 쌓인 점수는 지우지 않습니다(지우려면 순위 탭의 순위 리셋) */
+function scoreOff(id, title) {
+  if (!confirm('"' + title + '" 을 순위 과제에서 내립니다.\n\n' +
+    '쌓인 점수는 그대로 남고 순위 탭에서만 빠집니다. 다시 켜면 이어서 집계됩니다.\n' +
+    '점수까지 지우려면 순위 탭의 순위 리셋을 쓰세요.\n계속할까요?')) return;
+  sb.from("apps").update({ scored: false }).eq("id", id).then(function (r) {
+    if (r.error) return alert("바꾸지 못했습니다: " + r.error.message);
+    $("#modal").innerHTML = "";
+    panelApps();
   });
 }
 
