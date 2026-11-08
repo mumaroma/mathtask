@@ -714,6 +714,7 @@ var HELP = {
     "엑셀 받기를 누르면 지금 보이는 표가 그대로 파일로 내려옵니다.",
     "<b>새 창에서 지켜보기</b>를 누르면 표만 있는 창이 따로 뜹니다. 학생이 보낼 때마다 스스로 갱신되고 새로 들어온 줄이 잠깐 노랗게 깜빡입니다. 수업 중에 다른 화면에 띄워 두세요.",
     "그 창은 교사 화면 탭이 열려 있는 동안 갱신되니, 창을 띄운 뒤 이 탭을 닫지 말고 두세요.",
+    "창 위쪽에 <b>● 즉시 갱신</b>이라고 떠 있으면 학생이 보내는 대로 1초 안에 올라옵니다. <b>○ 8초마다 확인</b>이면 8초에 한 번 확인하는 것으로, 이때도 표는 그대로 갱신됩니다.",
     "학생 기기에 30초마다 저장되는 이어하기 기록은 학생에게만 남고 이 표에는 오지 않습니다."
   ]],
   mem: ["함께 관리", [
@@ -1425,11 +1426,14 @@ function sheetWinOpen(apps) {
     '.shbar button:hover{background:rgba(255,255,255,.15)}' +
     '.shbar #shNew{background:#FAC775;color:#412402;border-radius:999px;padding:1px 9px;' +
       'font-weight:700;font-size:11.5px}' +
+    '.shbar #shLive{font-size:11px;opacity:.75;letter-spacing:-.2px}' +
+    '.shbar #shLive.on{opacity:1;color:#9FE1CB;font-weight:700}' +
     '#shBody{padding:14px}' +
     '.shfoot{padding:0 14px 18px;font-size:11.5px;color:#5B5348}' +
     '</style></head><body><div class="shbar">' +
     '<b>응답표</b><span id="shWhen" style="font-size:11.5px;opacity:.85">불러오는 중…</span>' +
-    '<span id="shNew" hidden></span><span class="sp"></span>' +
+    '<span id="shNew" hidden></span><span id="shLive">○ 연결하는 중…</span>' +
+    '<span class="sp"></span>' +
     '<select id="wPick">' +
       '<option value="">모든 과제</option>' +
       (apps || []).map(function (a) {
@@ -1442,7 +1446,8 @@ function sheetWinOpen(apps) {
     '<button type="button" id="wRef">새로고침</button>' +
     '<button type="button" id="wXl">엑셀 받기</button>' +
     '</div><div id="shBody"><div class="empty">불러오는 중…</div></div>' +
-    '<p class="shfoot">' + esc(stitle) + ' · 교사 화면 탭이 열려 있는 동안 갱신됩니다.</p>' +
+    '<p class="shfoot">' + esc(stitle) + ' · 교사 화면 탭이 열려 있는 동안 갱신됩니다. ' +
+      '<span id="shLive2"></span></p>' +
     '</body></html>');
   w.document.close();
 
@@ -1454,7 +1459,9 @@ function sheetWinOpen(apps) {
   g("wXl").addEventListener("click", function (e) { downloadSheet(e.target, ST.shData); });
 
   ST.shPoll = setInterval(function () {
-    if (!ST.shWin || ST.shWin.closed) { clearInterval(ST.shPoll); ST.shPoll = null; ST.shWin = null; return; }
+    if (!ST.shWin || ST.shWin.closed) {
+      clearInterval(ST.shPoll); ST.shPoll = null; ST.shWin = null; sheetWinUnwatch(); return;
+    }
     var auto = g("wAuto");
     if (!auto || !auto.checked) return;
     sheetCount(ST.shCode, g("wPick") ? g("wPick").value : "").then(function (n) {
@@ -1464,7 +1471,54 @@ function sheetWinOpen(apps) {
     }).catch(function () { });
   }, SHEET_POLL);
 
+  sheetWinWatch(code);
   sheetWinLoad(true);
+}
+
+/* 학생이 보내는 즉시 알려 줍니다.
+   Realtime 에 submissions 가 올라가 있어야 합니다(patch-realtime.sql).
+   안 올라가 있으면 조용히 연결만 안 되고, 아래 8초 확인이 그대로 표를 갱신합니다. */
+function sheetWinWatch(code) {
+  sheetWinUnwatch();
+  try {
+    ST.shChan = sb.channel("sheet-" + code)
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "submissions", filter: "space_code=eq." + code },
+        function (m) {
+          var r = m && m.new; if (!r) return;
+          var pl = r.payload;
+          if (typeof pl === "string") { try { pl = JSON.parse(pl); } catch (e) { pl = null; } }
+          if (pl && pl.kind && pl.kind !== "answers") return;   /* 점수 같은 것은 넘깁니다 */
+          var w = ST.shWin; if (!w || w.closed) return;
+          var pick; try { pick = w.document.getElementById("wPick").value; } catch (e) { return; }
+          if (pick && r.app_id && r.app_id !== pick) return;
+          if (ST.shHit) clearTimeout(ST.shHit);   /* 여럿이 한꺼번에 보내면 한 번만 읽습니다 */
+          ST.shHit = setTimeout(function () { ST.shHit = null; sheetWinLoad(false); }, 500);
+        })
+      .subscribe(function (st) {
+        ST.shLive = (st === "SUBSCRIBED");
+        sheetWinMark();
+      });
+  } catch (e) { ST.shChan = null; ST.shLive = false; sheetWinMark(); }
+}
+
+function sheetWinUnwatch() {
+  if (ST.shHit) { clearTimeout(ST.shHit); ST.shHit = null; }
+  if (ST.shChan) { try { sb.removeChannel(ST.shChan); } catch (e) { } ST.shChan = null; }
+  ST.shLive = false;
+}
+
+/* 즉시 갱신이 되고 있는지 창에 그대로 적어 둡니다 */
+function sheetWinMark() {
+  var w = ST.shWin; if (!w || w.closed) return;
+  var a, b;
+  try { a = w.document.getElementById("shLive"); b = w.document.getElementById("shLive2"); } catch (e) { return; }
+  if (a) { a.textContent = ST.shLive ? "● 즉시 갱신" : "○ 8초마다 확인"; a.className = ST.shLive ? "on" : ""; }
+  if (b) {
+    b.textContent = ST.shLive
+      ? "학생이 보내면 1초 안에 뜹니다."
+      : "즉시 갱신은 꺼져 있고 8초마다 확인합니다 — 표는 그대로 갱신됩니다.";
+  }
 }
 
 function sheetWinLoad(force) {
@@ -1474,8 +1528,12 @@ function sheetWinLoad(force) {
   var pick = g("wPick") ? g("wPick").value : "";
   var lastOnly = g("wLast") ? g("wLast").checked : false;
   var byTime = g("wSort") ? g("wSort").value === "time" : false;
-  if (force) { ST.shSeen = null; ST.shCount = -1; }           /* 조건이 바뀌면 깜빡임을 처음부터 다시 셉니다 */
-  sheetFetch(ST.shCode, pick, lastOnly, byTime).then(function (d) {
+  if (force) ST.shSeen = null;   /* 조건이 바뀌면 깜빡임을 처음부터 다시 셉니다 */
+  /* 줄을 받기 '전'의 개수를 먼저 적어 둡니다 — 읽는 사이에 들어온 응답을 놓치지 않습니다 */
+  sheetCount(ST.shCode, pick).catch(function () { return -1; }).then(function (c) {
+    if (c >= 0) ST.shCount = c;
+    return sheetFetch(ST.shCode, pick, lastOnly, byTime);
+  }).then(function (d) {
     if (!ST.shWin || ST.shWin.closed) return;
     var b = g("shBody"), when = g("shWhen"), badge = g("shNew");
     if (!b) return;
@@ -1495,7 +1553,7 @@ function sheetWinLoad(force) {
       if (n > 0) { badge.hidden = false; badge.textContent = "새 응답 " + n + "개"; }
       else { badge.hidden = true; badge.textContent = ""; }
     }
-    if (ST.shCount < 0) sheetCount(ST.shCode, pick).then(function (c) { if (c >= 0) ST.shCount = c; }).catch(function () { });
+    sheetWinMark();
   }).catch(function (err) {
     var b = g("shBody");
     if (b) b.innerHTML = '<div class="empty">불러오지 못했습니다: ' + esc(err.message) + '</div>';
