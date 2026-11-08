@@ -437,3 +437,7 @@ table.matrix td.ansc > span { display: -webkit-box; -webkit-line-clamp: 3;
   -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap;
   overflow-wrap: anywhere; }
 table.matrix td.ansc:hover > span { -webkit-line-clamp: unset; }
+
+/* 응답표 — 방금 들어온 줄을 잠깐 깜빡입니다 */
+@keyframes shFlash { from { background:#FFE2A1; } to { background:transparent; } }
+table.matrix tr.fresh > th, table.matrix tr.fresh > td { animation: shFlash 2.6s ease-out; }

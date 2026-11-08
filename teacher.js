@@ -712,6 +712,8 @@ var HELP = {
     "학생이 보내기를 누를 때마다 한 줄이 쌓이므로, 중간에 보낸 것도 회차와 함께 모두 남습니다. 마지막 것만 보시려면 위쪽 체크를 켜세요.",
     "열 이름은 과제가 보내 준 문항 이름이고, 칸에 마우스를 올리면 긴 답이 모두 보입니다.",
     "엑셀 받기를 누르면 지금 보이는 표가 그대로 파일로 내려옵니다.",
+    "<b>새 창에서 지켜보기</b>를 누르면 표만 있는 창이 따로 뜹니다. 학생이 보낼 때마다 스스로 갱신되고 새로 들어온 줄이 잠깐 노랗게 깜빡입니다. 수업 중에 다른 화면에 띄워 두세요.",
+    "그 창은 교사 화면 탭이 열려 있는 동안 갱신되니, 창을 띄운 뒤 이 탭을 닫지 말고 두세요.",
     "학생 기기에 30초마다 저장되는 이어하기 기록은 학생에게만 남고 이 표에는 오지 않습니다."
   ]],
   mem: ["함께 관리", [
@@ -1229,7 +1231,7 @@ function wireSheetGuide() {
 }
 
 /* 보낸 것 하나하나를 한 줄로 만듭니다 */
-function sheetRows(subs, lastOnly) {
+function sheetRows(subs, lastOnly, byTime) {
   var seq = {}, rows = [];
   subs.forEach(function (x) {
     var ans = x.payload && x.payload.answers;
@@ -1243,7 +1245,8 @@ function sheetRows(subs, lastOnly) {
     rows.forEach(function (r) { keep[r.who] = r; });
     rows = rows.filter(function (r) { return keep[r.who] === r; });
   }
-  rows.sort(function (a, b) {
+  if (byTime) rows.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
+  else rows.sort(function (a, b) {
     return a.name.localeCompare(b.name, "ko") || a.nth - b.nth;
   });
   return rows;
@@ -1274,37 +1277,61 @@ function sheetCell(r, k) {
   return "";
 }
 
+/* 응답표 한 번 읽기 — 탭과 새 창이 같이 씁니다 */
+function sheetFetch(code, pick, lastOnly, byTime) {
+  var q = sb.from("submissions")
+    .select("id,app_id,app_title,student_name,student_id,created_at,payload")
+    .eq("space_code", code).not("payload", "is", null)
+    .order("created_at").limit(2000);
+  if (pick) q = q.eq("app_id", pick);
+  return q.then(function (r) {
+    if (r.error) throw new Error(r.error.message);
+    var subs = (r.data || []).filter(function (x) {
+      return x.payload && x.payload.kind === "answers" && x.payload.answers;
+    });
+    var rows = sheetRows(subs, lastOnly, byTime);
+    return { rows: rows, cols: sheetCols(rows) };
+  });
+}
+
+/* 새 응답이 들어왔는지만 싸게 확인합니다 — 줄은 받지 않고 개수만 셉니다 */
+function sheetCount(code, pick) {
+  var q = sb.from("submissions").select("id", { count: "exact", head: true })
+    .eq("space_code", code).not("payload", "is", null);
+  if (pick) q = q.eq("app_id", pick);
+  return q.then(function (r) { return (r.error || r.count == null) ? -1 : r.count; });
+}
+
+/* fresh — 방금 들어온 줄의 id 목록(없으면 깜빡이지 않습니다) */
+function sheetTableHtml(data, fresh) {
+  var cols = data.cols;
+  return '<div class="mwrap"><table class="matrix"><thead><tr><th>이름</th><th>회차</th><th>보낸 시각</th>' +
+      cols.map(function (c) { return '<th>' + esc(c.q) + '</th>'; }).join("") +
+    '</tr></thead><tbody>' +
+    data.rows.map(function (x) {
+      return '<tr' + (fresh && fresh[x.id] ? ' class="fresh"' : '') + '>' +
+        '<th class="nm">' + esc(x.name) + '</th>' +
+        '<td>' + x.nth + '</td><td class="m">' + hm(x.at) + '</td>' +
+        cols.map(function (c) {
+          var v = sheetCell(x, c.k);
+          return '<td class="ansc" title="' + esc(v) + '"><span>' + esc(v) + '</span></td>';
+        }).join("") + '</tr>';
+    }).join("") + '</tbody></table></div>' +
+    '<p class="m" style="margin-top:8px">' + data.rows.length + '줄 · 문항 ' + cols.length + '개</p>';
+}
+
 function panelSheet() {
   var pick = ST.sheetApp || "";
   var load = function () {
     var box = $("#shTable"); if (box) box.innerHTML = '<div class="empty">불러오는 중…</div>';
-    var q = sb.from("submissions")
-      .select("id,app_id,app_title,student_name,student_id,created_at,payload")
-      .eq("space_code", ST.space.code).not("payload", "is", null)
-      .order("created_at").limit(2000);
-    if (pick) q = q.eq("app_id", pick);
-    q.then(function (r) {
+    sheetFetch(ST.space.code, pick, !!ST.sheetLast).then(function (d) {
       box = $("#shTable"); if (!box) return;
-      if (r.error) { box.innerHTML = '<div class="empty">불러오지 못했습니다: ' + esc(r.error.message) + '</div>'; return; }
-      var subs = (r.data || []).filter(function (x) {
-        return x.payload && x.payload.kind === "answers" && x.payload.answers;
-      });
-      var rows = sheetRows(subs, !!ST.sheetLast), cols = sheetCols(rows);
-      ST.sheetData = { rows: rows, cols: cols };
-      if (!rows.length) { box.innerHTML = '<div class="empty">아직 들어온 응답이 없습니다.</div>'; return; }
-      box.innerHTML =
-        '<div class="mwrap"><table class="matrix"><thead><tr><th>이름</th><th>회차</th><th>보낸 시각</th>' +
-          cols.map(function (c) { return '<th>' + esc(c.q) + '</th>'; }).join("") +
-        '</tr></thead><tbody>' +
-        rows.map(function (x) {
-          return '<tr><th class="nm">' + esc(x.name) + '</th>' +
-            '<td>' + x.nth + '</td><td class="m">' + hm(x.at) + '</td>' +
-            cols.map(function (c) {
-              var v = sheetCell(x, c.k);
-              return '<td class="ansc" title="' + esc(v) + '"><span>' + esc(v) + '</span></td>';
-            }).join("") + '</tr>';
-        }).join("") + '</tbody></table></div>' +
-        '<p class="m" style="margin-top:8px">' + rows.length + '줄 · 문항 ' + cols.length + '개</p>';
+      ST.sheetData = d;
+      box.innerHTML = d.rows.length ? sheetTableHtml(d)
+        : '<div class="empty">아직 들어온 응답이 없습니다.</div>';
+    }).catch(function (err) {
+      var b = $("#shTable");
+      if (b) b.innerHTML = '<div class="empty">불러오지 못했습니다: ' + esc(err.message) + '</div>';
     });
   };
 
@@ -1323,19 +1350,23 @@ function panelSheet() {
         '<label class="dl" style="font-size:12px;margin:0"><input type="checkbox" id="shLast"' +
           (ST.sheetLast ? ' checked' : '') + '> 마지막 것만</label>' +
         '<button class="btn-s" id="shXl">엑셀 받기</button>' +
-        '<button class="btn-s" id="shRef">새로고침</button></span></div>' +
+        '<button class="btn-s" id="shRef">새로고침</button>' +
+        '<button class="btn-g" id="shWin">새 창에서 지켜보기</button></span></div>' +
+      '<p class="hint" style="margin:-2px 0 10px">새 창은 학생이 보낼 때마다 스스로 갱신됩니다. ' +
+        '이 교사 화면 탭이 열려 있는 동안 갱신되니 탭을 닫지 말고 두세요.</p>' +
       '<div id="shTable"><div class="empty">불러오는 중…</div></div></div>';
 
     on("#shPick", "change", function () { ST.sheetApp = pick = $("#shPick").value; load(); });
     on("#shLast", "change", function () { ST.sheetLast = $("#shLast").checked; load(); });
     on("#shRef", "click", load);
     on("#shXl", "click", function (e) { downloadSheet(e.target); });
+    on("#shWin", "click", function () { sheetWinOpen(apps); });
     load();
   });
 }
 
-function downloadSheet(btn) {
-  var d = ST.sheetData;
+function downloadSheet(btn, data) {
+  var d = data || ST.sheetData;
   if (!d || !d.rows.length) return alert("내려받을 응답이 없습니다.");
   var old = btn ? btn.textContent : "";
   if (btn) { btn.disabled = true; btn.textContent = "만드는 중…"; }
@@ -1354,6 +1385,120 @@ function downloadSheet(btn) {
   }).catch(function (err) {
     if (btn) { btn.disabled = false; btn.textContent = old; }
     alert(err.message);
+  });
+}
+
+/* ── 응답표 새 창 ──────────────────────────────────────────
+   교사 화면(부모 창)이 주기적으로 읽어 새 창 안에 그려 넣습니다.
+   학생 쪽으로 가는 것은 하나도 없고, 읽기만 합니다.
+   부모 탭을 닫으면 갱신이 멈춥니다 — 창 안에 그렇게 적어 둡니다. */
+var SHEET_POLL = 8000;   /* 8초마다 새 응답이 들어왔는지 확인합니다 */
+
+function sheetWinOpen(apps) {
+  var w = ST.shWin;
+  if (w && !w.closed) { w.focus(); return; }
+  var code = ST.space.code, stitle = ST.space.title || "과제 공간";
+  w = window.open("", "mathtask-sheet-" + code, "width=1150,height=820");
+  if (!w) { alert("팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요."); return; }
+  ST.shWin = w; ST.shCode = code; ST.shSeen = null; ST.shCount = -1;
+  if (ST.shPoll) { clearInterval(ST.shPoll); ST.shPoll = null; }
+
+  var css = "styles.css";
+  try { css = new URL("styles.css", location.href).href; } catch (e) { }
+  var pick = ST.sheetApp || "";
+
+  w.document.open();
+  w.document.write('<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">' +
+    '<title>응답표 — ' + esc(stitle) + '</title>' +
+    '<link rel="stylesheet" href="' + esc(css) + '">' +
+    '<style>body{padding:0;min-height:0}' +
+    '.shbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:9px;flex-wrap:wrap;' +
+      'padding:8px 14px;background:#1B4965;color:#fff;font-size:13px}' +
+    '.shbar b{font-weight:700}.shbar .sp{margin-left:auto}' +
+    '.shbar label{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#fff;' +
+      'margin:0;font-weight:400}' +
+    '.shbar input[type=checkbox]{accent-color:#FAC775;width:14px;height:14px;margin:0}' +
+    '.shbar select{font:inherit;font-size:12px;padding:3px 7px;margin:0;width:auto;' +
+      'border:1px solid rgba(255,255,255,.5);border-radius:7px;background:#fff;color:#1A1A1A;box-shadow:none}' +
+    '.shbar button{font:inherit;font-size:12px;padding:3px 11px;border:1px solid rgba(255,255,255,.55);' +
+      'border-radius:999px;background:transparent;color:#fff;cursor:pointer;box-shadow:none}' +
+    '.shbar button:hover{background:rgba(255,255,255,.15)}' +
+    '.shbar #shNew{background:#FAC775;color:#412402;border-radius:999px;padding:1px 9px;' +
+      'font-weight:700;font-size:11.5px}' +
+    '#shBody{padding:14px}' +
+    '.shfoot{padding:0 14px 18px;font-size:11.5px;color:#5B5348}' +
+    '</style></head><body><div class="shbar">' +
+    '<b>응답표</b><span id="shWhen" style="font-size:11.5px;opacity:.85">불러오는 중…</span>' +
+    '<span id="shNew" hidden></span><span class="sp"></span>' +
+    '<select id="wPick">' +
+      '<option value="">모든 과제</option>' +
+      (apps || []).map(function (a) {
+        return '<option value="' + a.id + '"' + (pick === a.id ? " selected" : "") + '>' + esc(a.title) + '</option>';
+      }).join("") +
+    '</select>' +
+    '<select id="wSort"><option value="name">이름순</option><option value="time">최근순</option></select>' +
+    '<label><input type="checkbox" id="wLast"> 마지막 것만</label>' +
+    '<label><input type="checkbox" id="wAuto" checked> 자동 갱신</label>' +
+    '<button type="button" id="wRef">새로고침</button>' +
+    '<button type="button" id="wXl">엑셀 받기</button>' +
+    '</div><div id="shBody"><div class="empty">불러오는 중…</div></div>' +
+    '<p class="shfoot">' + esc(stitle) + ' · 교사 화면 탭이 열려 있는 동안 갱신됩니다.</p>' +
+    '</body></html>');
+  w.document.close();
+
+  var g = function (id) { try { return w.document.getElementById(id); } catch (e) { return null; } };
+  g("wPick").addEventListener("change", function () { sheetWinLoad(true); });
+  g("wSort").addEventListener("change", function () { sheetWinLoad(true); });
+  g("wLast").addEventListener("change", function () { sheetWinLoad(true); });
+  g("wRef").addEventListener("click", function () { sheetWinLoad(true); });
+  g("wXl").addEventListener("click", function (e) { downloadSheet(e.target, ST.shData); });
+
+  ST.shPoll = setInterval(function () {
+    if (!ST.shWin || ST.shWin.closed) { clearInterval(ST.shPoll); ST.shPoll = null; ST.shWin = null; return; }
+    var auto = g("wAuto");
+    if (!auto || !auto.checked) return;
+    sheetCount(ST.shCode, g("wPick") ? g("wPick").value : "").then(function (n) {
+      if (n < 0) return;
+      if (n === ST.shCount) return;      /* 새 응답이 없으면 줄을 다시 받지 않습니다 */
+      ST.shCount = n; sheetWinLoad(false);
+    }).catch(function () { });
+  }, SHEET_POLL);
+
+  sheetWinLoad(true);
+}
+
+function sheetWinLoad(force) {
+  var w = ST.shWin; if (!w || w.closed) return;
+  var g = function (id) { try { return w.document.getElementById(id); } catch (e) { return null; } };
+  var body = g("shBody"); if (!body) return;
+  var pick = g("wPick") ? g("wPick").value : "";
+  var lastOnly = g("wLast") ? g("wLast").checked : false;
+  var byTime = g("wSort") ? g("wSort").value === "time" : false;
+  if (force) { ST.shSeen = null; ST.shCount = -1; }           /* 조건이 바뀌면 깜빡임을 처음부터 다시 셉니다 */
+  sheetFetch(ST.shCode, pick, lastOnly, byTime).then(function (d) {
+    if (!ST.shWin || ST.shWin.closed) return;
+    var b = g("shBody"), when = g("shWhen"), badge = g("shNew");
+    if (!b) return;
+    ST.shData = d;
+    var fresh = null, n = 0;
+    if (ST.shSeen) {
+      fresh = {};
+      d.rows.forEach(function (r) { if (!ST.shSeen[r.id]) { fresh[r.id] = true; n++; } });
+    }
+    ST.shSeen = {};
+    d.rows.forEach(function (r) { ST.shSeen[r.id] = true; });
+    b.innerHTML = d.rows.length ? sheetTableHtml(d, fresh)
+      : '<div class="empty">아직 들어온 응답이 없습니다.<br>학생이 보내면 여기에 바로 쌓입니다.</div>';
+    if (when) { var t = new Date(), p2 = function (n) { return String(n).padStart(2, "0"); };
+      when.textContent = p2(t.getHours()) + ":" + p2(t.getMinutes()) + ":" + p2(t.getSeconds()) + " 기준"; }
+    if (badge) {
+      if (n > 0) { badge.hidden = false; badge.textContent = "새 응답 " + n + "개"; }
+      else { badge.hidden = true; badge.textContent = ""; }
+    }
+    if (ST.shCount < 0) sheetCount(ST.shCode, pick).then(function (c) { if (c >= 0) ST.shCount = c; }).catch(function () { });
+  }).catch(function (err) {
+    var b = g("shBody");
+    if (b) b.innerHTML = '<div class="empty">불러오지 못했습니다: ' + esc(err.message) + '</div>';
   });
 }
 
